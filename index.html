@@ -526,7 +526,11 @@ async function createWeek(dup){
   let name='';
   if(dateEl&&dateEl.value){
     const mon=mondayOfWeek(dateEl.value);
-    startDate=mon.toISOString().slice(0,10);
+    // Format as YYYY-MM-DD in local time (avoid UTC shift)
+    const y=mon.getFullYear();
+    const m=String(mon.getMonth()+1).padStart(2,'0');
+    const d=String(mon.getDate()).padStart(2,'0');
+    startDate=`${y}-${m}-${d}`;
     name=nameEl&&nameEl.value.trim()?nameEl.value.trim():weekNameFromMonday(mon);
   } else {
     name=(nameEl&&nameEl.value.trim())||'Nuova settimana';
