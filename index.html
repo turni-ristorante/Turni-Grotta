@@ -151,7 +151,7 @@ const IDX_CENA=[3,4,5];const IDX_PC=[0,1,2,3,4,5];
 function shiftColorStyle(code){
   if(!code)return'';
   const u=code.toUpperCase();
-  if(u==='OFF'||u==='FERIE')return'background:#111;color:#fff;';
+  if(u==='OFF'||u==='FERIE'||u==='MALATTIA')return'background:#111;color:#fff;';
   const l=u[0];
   if(l==='B')return'background:#1a56db;color:#fff;';
   if(l==='D')return'background:#e65100;color:#fff;';
@@ -275,12 +275,13 @@ function setSyncStatus(s){syncStatus=s;const el=document.getElementById('sync-st
 function emptyWeek(name){return{id:'w'+Date.now()+Math.random().toString(36).slice(2,6),name:name||'Nuova settimana',published:false,day_config:['cena','cena','cena','cena','cena','cena','cena'],shift_assign:{},role_assign:{},selected_day:0};}
 function curWeek(){return G.weeks.find(w=>w.id===G.currentWeekId)||G.weeks[0];}
 function getShift(code){return G.shifts.find(s=>s.code===code)||null;}
-function shiftInFascia(code,fid){const s=getShift(code);if(!s||s.is_off||s.is_ferie)return false;return s.fasce&&s.fasce.includes(fid);}
+function isFuoriServizio(code){if(!code)return true;const u=code.toUpperCase();if(u==='MALATTIA')return true;const s=getShift(code);return !s||s.is_off||s.is_ferie;}
+function shiftInFascia(code,fid){if(isFuoriServizio(code))return false;const s=getShift(code);if(!s)return false;return s.fasce&&s.fasce.includes(fid);}
 const isManager=()=>role==='manager';
 function getVisibleWeeks(){return isManager()?G.weeks:G.weeks.filter(w=>w.published);}
 function getDepWeek(){const vw=getVisibleWeeks();return vw.find(w=>w.id===G.currentWeekId)||vw[0]||null;}
 function staffName(id){const p=G.staff.find(s=>s.id===id);return p?p.name:id;}
-function isWorking(assign,pid){const c=assign[pid]||'';const s=getShift(c);return c&&s&&!s.is_off&&!s.is_ferie;}
+function isWorking(assign,pid){const c=assign[pid]||'';return c&&!isFuoriServizio(c);}
 
 function renderApp(){
   if(!role){renderLogin();return;}
@@ -693,7 +694,7 @@ function renderTurni(){
   if(isManager()){
     h+='<tr class="count-row"><td class="scol" style="background:var(--bg3);">N. operatori</td>';
     cols.forEach(c=>{
-      const n=G.staff.filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);const s=getShift(code);return s&&!s.is_off&&!s.is_ferie&&code;}).length;
+      const n=G.staff.filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);return code&&!isFuoriServizio(code);}).length;
       h+=`<td>${n||''}</td>`;
     });
     h+='</tr>';
@@ -1153,12 +1154,24 @@ function generaBozza(){
 }
 
 // ===== LEGENDA =====
+let legDragSrc=null;
+function legDragStart(e,i){legDragSrc=i;}
+function legDragOver(e,i){e.preventDefault();}
+function legDrop(e,i){
+  e.preventDefault();
+  if(legDragSrc===null||legDragSrc===i)return;
+  const moved=G.shifts.splice(legDragSrc,1)[0];
+  G.shifts.splice(i,0,moved);
+  legDragSrc=null;
+  renderLegenda();renderLegSidebar();
+}
 function renderLegenda(){
   const el=document.getElementById('leg-main-table');if(!el)return;
   const fh=ALL_FASCE.map(f=>`<th class="cb-th ${f.tipo==='pranzo'?'fp':'fc'}">${f.label}</th>`).join('');
-  let h=`<thead><tr><th style="text-align:left;padding:5px 8px;">Codice</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Pranzo</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Cena</th>${fh}<th></th></tr></thead><tbody>`;
+  let h=`<thead><tr><th style="width:20px;"></th><th style="text-align:left;padding:5px 8px;">Codice</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Pranzo</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Cena</th>${fh}<th></th></tr></thead><tbody>`;
   G.shifts.forEach((s,i)=>{
-    h+=`<tr>
+    h+=`<tr draggable="true" ondragstart="legDragStart(event,${i})" ondragover="legDragOver(event,${i})" ondrop="legDrop(event,${i})" style="cursor:grab;">
+      <td style="padding:3px 5px;color:var(--text3);font-size:16px;cursor:grab;">⠿</td>
       <td><span style="${shiftColorStyle(s.code)}padding:2px 8px;border-radius:4px;font-weight:600;font-size:12px;">${s.code}</span>
           <input type="text" value="${s.code}" onchange="G.shifts[${i}].code=this.value;renderLegSidebar();" style="width:52px;font-weight:600;font-family:inherit;margin-left:4px;"></td>
       <td><input type="text" value="${s.s1||''}" placeholder="inizio" onchange="G.shifts[${i}].s1=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e1||''}" placeholder="fine" onchange="G.shifts[${i}].e1=this.value" style="width:46px;font-family:inherit;"></td>
