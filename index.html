@@ -127,6 +127,17 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .rules-list{display:flex;flex-direction:column;gap:8px;margin-bottom:1rem;}
 .rule-row{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);flex-wrap:wrap;}
 .extra-badge{font-size:10px;padding:1px 7px;border-radius:20px;background:#fef3c7;color:#92400e;border:0.5px solid #fcd34d;margin-left:4px;}
+
+.draft-panel{background:#f3e8ff;border:0.5px solid #c4b5fd;border-radius:var(--radius);padding:10px 14px;margin-bottom:1rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.draft-panel span{font-size:12px;color:#7e22ce;flex:1;}
+.role-rule-row{display:flex;align-items:center;gap:6px;padding:10px 14px;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);flex-wrap:wrap;margin-bottom:6px;}
+.day-pills{display:flex;gap:3px;flex-wrap:wrap;}
+.day-pill{padding:2px 8px;border-radius:20px;font-size:10px;cursor:pointer;border:0.5px solid var(--border);background:var(--bg3);color:var(--text2);}
+.day-pill.active{background:var(--blue-bg);color:var(--blue-text);border-color:var(--blue-border);}
+.pref-roles-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin-bottom:1rem;}
+.pref-role-item{display:flex;flex-direction:column;gap:3px;}
+.pref-role-item label{font-size:11px;color:var(--text2);}
+.btn.purple{background:#f3e8ff;color:#7e22ce;border-color:#c4b5fd;}
 </style>
 </head><body>
 <div id="loading-screen"><div class="spinner"></div><p style="font-size:14px;color:#555;">Connessione al database...</p></div>
@@ -218,7 +229,7 @@ const DEF_SHIFTS=[
   {code:'E16',s1:'',e1:'',s2:'20:00',e2:'C',is_off:false,is_ferie:false,fasce:[4,5]},
 ];
 
-let G={staff:[],shifts:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[]};
+let G={staff:[],shifts:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[]};
 let role='';let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
 
 function isExtra(p){return (p.role||'').trim().toUpperCase()==='EXTRA';}
@@ -233,14 +244,16 @@ async function dbLoad(){
       if(r.key==='fabbisogno')try{G.fabbisogno=JSON.parse(r.value);}catch(e){}
       if(r.key==='equivalenze')try{G.equivalenze=JSON.parse(r.value);}catch(e){}
       if(r.key==='regole')try{G.regole=JSON.parse(r.value);}catch(e){}
+      if(r.key==='roleRules')try{G.roleRules=JSON.parse(r.value);}catch(e){}
+      if(r.key==='posRules')try{G.posRules=JSON.parse(r.value);}catch(e){}
     });}
     const {data:staff}=await sb.from('staff').select('*');
-    G.staff=(staff||[]).map(s=>({...s,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||''}));
+    G.staff=(staff||[]).map(s=>({...s,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{}}));
     const {data:shifts}=await sb.from('shifts').select('*');
-    if(shifts&&shifts.length>0){G.shifts=shifts.map(s=>({...s,fasce:s.fasce||[]}));}
+    if(shifts&&shifts.length>0){G.shifts=shifts.map(s=>({...s,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[]}));}
     else{G.shifts=JSON.parse(JSON.stringify(DEF_SHIFTS));await dbSaveShifts();}
     const {data:weeks}=await sb.from('weeks').select('*');
-    G.weeks=(weeks||[]).map(w=>({...w,day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||''}));
+    G.weeks=(weeks||[]).map(w=>({...w,day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||'',draft_assign:w.draft_assign||null,draft_role_assign:w.draft_role_assign||null}));
     if(!G.weeks.length){const w=emptyWeek('Prima settimana');G.weeks=[w];await sb.from('weeks').insert(weekToDb(w));}
     if(!G.currentWeekId||!G.weeks.find(w=>w.id===G.currentWeekId)){G.currentWeekId=G.weeks[0].id;await sb.from('config').upsert({key:'currentWeekId',value:G.currentWeekId});}
     migrateFabbisogno();
@@ -256,6 +269,8 @@ function migrateFabbisogno(){
 function weekToDb(w){
   const obj={id:w.id,name:w.name,published:w.published||false,day_config:w.day_config,shift_assign:w.shift_assign,role_assign:w.role_assign,selected_day:w.selected_day||0};
   if(w.startDate!==undefined)obj.startDate=w.startDate||'';
+  if(w.draft_assign!==undefined)obj.draft_assign=w.draft_assign||null;
+  if(w.draft_role_assign!==undefined)obj.draft_role_assign=w.draft_role_assign||null;
   return obj;
 }
 async function dbSaveWeek(w){try{await sb.from('weeks').upsert(weekToDb(w));setSyncStatus('ok');}catch(e){setSyncStatus('err');}}
@@ -264,7 +279,7 @@ async function dbSaveStaff(){
   try{
     await sb.from('staff').delete().neq('id','__none__');
     if(G.staff.length){
-      const rows=G.staff.map(s=>({id:s.id,name:s.name,role:s.role,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||''}));
+      const rows=G.staff.map(s=>({id:s.id,name:s.name,role:s.role,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{}}));
       await sb.from('staff').insert(rows);
     }
     setSyncStatus('ok');
@@ -308,6 +323,7 @@ function renderApp(){
         <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="doUndo()" title="Annulla ultima modifica">↩ Annulla</button>
         <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="clearWeek()" title="Svuota tutti i turni della settimana">🗑 Pulisci settimana</button>`:''}
       </div>
+      <div id="draft-panel" class="draft-panel" style="display:none;"><span>📋 Hai una bozza salvata per questa settimana</span><button class="btn purple" style="font-size:11px;padding:4px 10px;" onclick="restoreDraft()">Ripristina bozza</button></div>
       <div id="draft-alerts"></div>
       <div class="main-with-sidebar">
         <div class="main-content"><div class="wrap" id="turni-wrap"></div></div>
@@ -346,11 +362,29 @@ function renderApp(){
       </div>
     </div>
     <div id="sec-regole" class="sec">
-      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Se una persona è assente, un'altra deve essere presente. Vale per tutti i giorni.</p>
+      <p style="font-size:13px;font-weight:500;margin-bottom:4px;">Regole presenza</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:0.75rem;">Se una persona è assente, un'altra deve lavorare.</p>
       <div class="rules-list" id="rules-list"></div>
-      <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
-        <button class="btn primary" onclick="addRegola()">+ Nuova regola</button>
-        <button class="btn" onclick="saveRegole()">Salva regole</button>
+      <div style="display:flex;gap:8px;margin-bottom:1.25rem;">
+        <button class="btn primary" onclick="addRegola()">+ Nuova regola presenza</button>
+        <button class="btn" onclick="saveRegole()">Salva</button>
+      </div>
+      <hr style="border:none;border-top:0.5px solid var(--border);margin-bottom:1rem;">
+      <p style="font-size:13px;font-weight:500;margin-bottom:4px;">Regole ruolo</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:0.75rem;">Quando X lavora o è assente, Y fa un ruolo specifico (con giorni da escludere).</p>
+      <div id="role-rules-list"></div>
+      <div style="display:flex;gap:8px;margin-bottom:1.25rem;">
+        <button class="btn primary" onclick="addRoleRule()">+ Nuova regola ruolo</button>
+        <button class="btn" onclick="saveRoleRules()">Salva</button>
+      </div>
+      <hr style="border:none;border-top:0.5px solid var(--border);margin-bottom:1rem;">
+      <p style="font-size:13px;font-weight:500;margin-bottom:4px;">Regole posizionamento</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:4px;">A e B nella stessa zona o in zone diverse nel giornaliero.</p>
+      <p style="font-size:11px;color:var(--text3);margin-bottom:0.75rem;">DEHOOR e PASS BEV FUORI sono considerate la stessa zona. Tutti gli altri ruoli sono zone separate.</p>
+      <div id="pos-rules-list"></div>
+      <div style="display:flex;gap:8px;margin-bottom:1rem;">
+        <button class="btn primary" onclick="addPosRule()">+ Nuova regola posizionamento</button>
+        <button class="btn" onclick="savePosRules()">Salva</button>
       </div>
     </div>
     <div id="sec-legenda" class="sec">
@@ -450,12 +484,26 @@ function goTab(t){
   if(t==='settimane')renderWeekList();
 }
 
-function renderLegSidebar(){
-  const html=G.shifts.filter(s=>!s.is_off&&!s.is_ferie).map(s=>{
-    const pts=[];if(s.s1&&s.e1)pts.push(`${s.s1}–${s.e1}`);if(s.s2&&s.e2)pts.push(`${s.s2}–${s.e2}`);
+function renderLegSidebar(filter){
+  const workShifts=G.shifts.filter(s=>!isFuoriServizio(s.code)||false).filter(s=>{
+    const u=s.code.toUpperCase();return u!=='OFF'&&u!=='FERIE'&&u!=='MALATTIA'&&!s.is_off&&!s.is_ferie;
+  });
+  const initials=[...new Set(workShifts.map(s=>s.code[0].toUpperCase()))].sort();
+  const filterHtml='<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px;">'
+    +initials.map(l=>{
+      const active=!filter||filter===l;
+      const style=l==='B'?'background:#1a56db;color:#fff;':l==='D'?'background:#e65100;color:#fff;':l==='M'?'background:#6b7280;color:#fff;':l==='A'?'background:#c026d3;color:#fff;':l==='E'?'background:#dc2626;color:#fff;':'background:var(--bg3);color:var(--text);';
+      return`<span onclick="renderLegSidebar('${filter===l?'':l}')" style="cursor:pointer;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;${style}opacity:${active?1:0.3};">${l}</span>`;
+    }).join('')+'</div>';
+  const filtered=workShifts.filter(s=>!filter||s.code[0].toUpperCase()===filter);
+  const itemsHtml=filtered.map(s=>{
+    const pts=[];if(s.s1&&s.e1)pts.push(s.s1+'–'+s.e1);if(s.s2&&s.e2)pts.push(s.s2+'–'+s.e2);
     return`<div class="leg-sidebar-item"><span class="leg-code" style="${shiftColorStyle(s.code)}">${s.code}</span><div class="leg-time">${pts.join('<br>')}</div></div>`;
   }).join('');
-  ['turni','giorno'].forEach(id=>{const el=document.getElementById('leg-sidebar-'+id);if(el)el.innerHTML=html;});
+  ['turni','giorno'].forEach(id=>{
+    const el=document.getElementById('leg-sidebar-'+id);
+    if(el)el.innerHTML=filterHtml+itemsHtml;
+  });
 }
 
 function renderWeekSelector(){
@@ -536,6 +584,10 @@ async function createWeek(dup){
   } else {
     name=(nameEl&&nameEl.value.trim())||'Nuova settimana';
   }
+  // Auto-version if name already exists
+  const baseName=name;
+  let ver=0;
+  while(G.weeks.find(w=>w.name===name)){ver++;name=`${baseName} (${ver})`;}
   let w=emptyWeek(name);
   w.startDate=startDate;
   if(dup){const c=curWeek();w.day_config=JSON.parse(JSON.stringify(c.day_config));w.shift_assign=JSON.parse(JSON.stringify(c.shift_assign));w.role_assign=JSON.parse(JSON.stringify(c.role_assign));}
@@ -563,9 +615,43 @@ async function dupWeekFrom(id){
   await sb.from('weeks').insert(weekToDb(w));await dbSaveConfig('currentWeekId',w.id);
   renderWeekSelector();renderWeekList();renderTurni();
 }
+let weekListOrder=null;// manual order (array of ids), null = auto chronological
+function getWeeksSorted(){
+  if(weekListOrder&&weekListOrder.length){
+    // Manual order: sort by weekListOrder, append any new weeks at end
+    const ordered=[];
+    weekListOrder.forEach(id=>{const w=G.weeks.find(w=>w.id===id);if(w)ordered.push(w);});
+    G.weeks.forEach(w=>{if(!ordered.find(o=>o.id===w.id))ordered.push(w);});
+    return ordered;
+  }
+  // Default: chronological descending by startDate, then by creation order
+  return [...G.weeks].sort((a,b)=>{
+    if(a.startDate&&b.startDate)return b.startDate.localeCompare(a.startDate);
+    if(a.startDate)return -1;if(b.startDate)return 1;
+    return 0;
+  });
+}
+let weekDragSrc=null;
+function weekDragStart(e,id){weekDragSrc=id;}
+function weekDragOver(e){e.preventDefault();}
+function weekDrop(e,id){
+  e.preventDefault();if(!weekDragSrc||weekDragSrc===id)return;
+  const sorted=getWeeksSorted();
+  const fromIdx=sorted.findIndex(w=>w.id===weekDragSrc);
+  const toIdx=sorted.findIndex(w=>w.id===id);
+  if(fromIdx<0||toIdx<0)return;
+  const moved=sorted.splice(fromIdx,1)[0];
+  sorted.splice(toIdx,0,moved);
+  weekListOrder=sorted.map(w=>w.id);
+  weekDragSrc=null;
+  renderWeekList();
+}
 function renderWeekList(){
-  document.getElementById('week-list').innerHTML=G.weeks.map(w=>`
-    <div class="week-item ${w.id===G.currentWeekId?'current':''}">
+  const sorted=getWeeksSorted();
+  document.getElementById('week-list').innerHTML=sorted.map((w,i)=>`
+    <div class="week-item ${w.id===G.currentWeekId?'current':''}" draggable="true"
+      ondragstart="weekDragStart(event,'${w.id}')" ondragover="weekDragOver(event)" ondrop="weekDrop(event,'${w.id}')">
+      <span style="color:var(--text3);font-size:16px;cursor:grab;padding:0 6px;">⠿</span>
       <input value="${w.name}" onchange="renameWeek('${w.id}',this.value)" style="flex:1;min-width:100px;border:none;background:transparent;font-size:13px;color:var(--text);padding:0;font-family:inherit;">
       <span class="pub-badge ${w.published?'yes':'no'}">${w.published?'Pubblicata':'Bozza'}</span>
       <div style="display:flex;gap:4px;flex-wrap:wrap;">
@@ -795,6 +881,7 @@ function renderDayContent(){
   });
   h+='</tbody></table></div>';
   document.getElementById('day-content').innerHTML=h;
+  if(isManager())updateIncompleteAlert();
 }
 let roleTimer=null;
 function setRole(key,val){
@@ -820,23 +907,29 @@ async function removeStaff(id){
 function renderStaff(){
   const el=document.getElementById('staff-list');if(!el)return;
   if(!G.staff.length){el.innerHTML='<p style="color:var(--text2);font-size:12px;">Nessun dipendente.</p>';return;}
-  el.innerHTML=G.staff.map((p,i)=>{
+  let html='';
+  G.staff.forEach((p,i)=>{
     const extra=isExtra(p);
-    return`<div class="staff-row ${selectedStaffId===p.id?'drag-over':''}" draggable="true" data-idx="${i}"
+    html+=`<div class="staff-row ${selectedStaffId===p.id?'drag-over':''}" draggable="true" data-idx="${i}"
       ondragstart="dragStart(event,${i})" ondragover="dragOver(event,${i})" ondrop="dragDrop(event,${i})" ondragend="dragEnd()"
       onclick="selectStaff('${p.id}')">
       <span class="drag-handle">⠿</span>
       <span style="font-weight:500;flex:1;">${p.name}</span>
       ${p.role?`<span style="color:var(--text2);font-size:11px;">${p.role}</span>`:''}
-      ${extra?'<span class="extra-badge">Extra — ignorato dalla bozza</span>':`<span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett • ${(p.canDo||[]).length} turni</span>`}
+      ${extra?'<span class="extra-badge">Extra</span>':`<span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett</span>`}
       <button class="btn danger" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();removeStaff('${p.id}')">Rimuovi</button>
     </div>`;
-  }).join('');
+    if(selectedStaffId===p.id){
+      html+='<div id="staff-detail-inline" style="margin:0 0 8px 0;"></div>';
+    }
+  });
+  el.innerHTML=html;
+  const old=document.getElementById('staff-detail-panel');if(old)old.innerHTML='';
   renderStaffDetail();
 }
 function selectStaff(id){selectedStaffId=selectedStaffId===id?null:id;renderStaff();}
 function renderStaffDetail(){
-  const panel=document.getElementById('staff-detail-panel');if(!panel)return;
+  const panel=document.getElementById('staff-detail-inline')||document.getElementById('staff-detail-panel');if(!panel)return;
   if(!selectedStaffId){panel.innerHTML='';return;}
   const p=G.staff.find(s=>s.id===selectedStaffId);if(!p){panel.innerHTML='';return;}
   const extra=isExtra(p);
@@ -871,6 +964,14 @@ function renderStaffDetail(){
       <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:12px;">Giorni liberi preferiti (non tassativi)</p>
       <div class="day-check-grid">
         ${DAY_NAMES.map((n,i)=>{const checked=(p.offRequests||[]).includes(i);return`<label class="cb-pill ${checked?'checked':''}"><input type="checkbox" ${checked?'checked':''} onchange="toggleOffReq('${p.id}',${i},this.checked)">${n}</label>`;}).join('')}
+      </div>
+      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:12px;">Ruolo preferito per fascia</p>
+      <div class="pref-roles-grid">
+        ${ALL_FASCE.map(f=>{const pref=(p.preferredRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label}</label><select onchange="setPrefRole('${p.id}',${f.id},'pref',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===pref?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
+      </div>
+      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:8px;">Ruolo secondario per fascia (se il preferito è già coperto)</p>
+      <div class="pref-roles-grid">
+        ${ALL_FASCE.map(f=>{const sec=(p.secondaryRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label}</label><select onchange="setPrefRole('${p.id}',${f.id},'sec',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===sec?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
       </div>`}
     </div>`;
 }
@@ -941,29 +1042,62 @@ function renderFabbisogno(){
   const el=document.getElementById('fab-grid');if(!el)return;
   const wk=curWeek();
   const workShifts=G.shifts.filter(s=>!s.is_off&&!s.is_ferie);
-  function renderCard(name,fabKey,servizio){
-    const fab=G.fabbisogno[fabKey]||{slots:[],maxRiposi:0};
+  function renderCard(name,fabKey,servizio,dayIdx){
+    const fab=G.fabbisogno[fabKey]||{slots:[],maxRiposi:0,roleReqs:{}};
+    if(!fab.roleReqs)fab.roleReqs={};
     const slotsHtml=(fab.slots||[]).map((slot,si)=>{
       const tags=slot.codes.map(c=>`<span class="fab-shift-tag" style="${shiftColorStyle(c)}">${c}</span>`).join('<span style="font-size:10px;color:var(--text3);padding:0 2px;">o</span>');
       return`<div class="fab-slot"><div class="fab-slot-codes">${tags}</div><button style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;margin-left:auto;" onclick="removeFabSlot('${fabKey}',${si})">×</button></div>`;
     }).join('');
     const border=servizio==='pranzo'?'border-top:2px solid #f5d76e;':servizio==='cena'?'border-top:2px solid #93b4f7;':'';
     const sub=servizio==='pranzo'?' <span style="font-size:10px;font-weight:400;color:#7a5c00;">Pranzo</span>':servizio==='cena'?' <span style="font-size:10px;font-weight:400;color:#0a3d6e;">Cena</span>':'';
+    // Fasce to show role reqs for
+    const tipo2=wk?wk.day_config[dayIdx]||'cena':'cena';
+    const allFasceForCard=tipo2==='pranzo_cena'?IDX_PC.map(i=>ALL_FASCE[i]):IDX_CENA.map(i=>ALL_FASCE[i]);
+    const fasceForCard=allFasceForCard.filter(f=>{
+      if(!servizio)return true;
+      if(servizio==='pranzo')return f.tipo==='pranzo';
+      return f.tipo==='cena';
+    });
+    // Role reqs section
+    let roleReqsHtml='<div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border);">';
+    roleReqsHtml+=`<p style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:6px;">Ruoli richiesti per fascia</p>`;
+    fasceForCard.forEach(f=>{
+      const reqs=(fab.roleReqs[f.id])||{};
+      roleReqsHtml+=`<div style="margin-bottom:8px;"><span style="font-size:10px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">${f.label}</span>`;
+      roleReqsHtml+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:3px;">`;
+      ROLES.forEach(r=>{
+        const val=reqs[r]||0;
+        roleReqsHtml+=`<div style="display:flex;align-items:center;gap:3px;font-size:11px;">
+          <input type="number" min="0" max="20" value="${val}" onchange="setRoleReq('${fabKey}',${f.id},'${r}',this.value)"
+            style="width:34px;padding:2px 3px;border-radius:4px;border:0.5px solid var(--border2);font-family:inherit;font-size:11px;text-align:center;">
+          <span style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;" title="${r}">${r}</span>
+        </div>`;
+      });
+      roleReqsHtml+=`</div></div>`;
+    });
+    roleReqsHtml+='</div>';
+    // Dup button
+    const dupHtml=`<div style="margin-top:6px;">
+      <button class="btn" style="font-size:11px;padding:3px 10px;" onclick="dupFabbisogno('${fabKey}')">📋 Duplica su...</button>
+    </div>`;
     return`<div class="fab-card" style="${border}">
       <h4>${name}${sub}</h4>
       <div class="fab-slots">${slotsHtml||'<span style="font-size:11px;color:var(--text3);">Nessuno slot</span>'}</div>
-      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
         <select id="fab-sel-${fabKey}" style="font-size:11px;padding:3px 6px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
           ${workShifts.map(s=>`<option value="${s.code}">${s.code}</option>`).join('')}
         </select>
         <button class="btn primary" style="font-size:11px;padding:3px 8px;" onclick="addFabSlotSingle('${fabKey}')">+ Singolo</button>
         <button class="btn warn" style="font-size:11px;padding:3px 8px;" onclick="addFabSlotEquiv('${fabKey}')">+ Con equiv.</button>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
         <label style="font-size:11px;color:var(--text2);">Max riposi:</label>
         <input type="number" min="0" max="30" value="${fab.maxRiposi||0}" onchange="setFabRiposi('${fabKey}',this.value)"
           style="width:55px;padding:3px 6px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:11px;">
       </div>
+      ${dupHtml}
+      ${roleReqsHtml}
     </div>`;
   }
   let html='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:1rem;">';
@@ -971,10 +1105,10 @@ function renderFabbisogno(){
     const tipo=wk?wk.day_config[i]||'cena':'cena';
     if(tipo==='chiuso')return;
     if(tipo==='pranzo_cena'){
-      html+=renderCard(name,`${i}_pranzo`,'pranzo');
-      html+=renderCard(name,`${i}_cena`,'cena');
+      html+=renderCard(name,`${i}_pranzo`,'pranzo',i);
+      html+=renderCard(name,`${i}_cena`,'cena',i);
     } else {
-      html+=renderCard(name,String(i),null);
+      html+=renderCard(name,String(i),null,i);
     }
   });
   html+='</div>';
@@ -984,6 +1118,39 @@ function addFabSlotSingle(fabKey){const sel=document.getElementById(`fab-sel-${f
 function addFabSlotEquiv(fabKey){const sel=document.getElementById(`fab-sel-${fabKey}`);if(!sel)return;getFab(fabKey).slots.push({codes:[...getEquivGroup(sel.value)]});renderFabbisogno();}
 function removeFabSlot(fabKey,si){if(!G.fabbisogno[fabKey])return;G.fabbisogno[fabKey].slots.splice(si,1);renderFabbisogno();}
 function setFabRiposi(fabKey,val){getFab(fabKey).maxRiposi=parseInt(val)||0;}
+function setRoleReq(fabKey,fasciaId,roleName,val){
+  const fab=getFab(fabKey);
+  if(!fab.roleReqs)fab.roleReqs={};
+  if(!fab.roleReqs[fasciaId])fab.roleReqs[fasciaId]={};
+  const n=parseInt(val)||0;
+  if(n>0)fab.roleReqs[fasciaId][roleName]=n;
+  else delete fab.roleReqs[fasciaId][roleName];
+}
+function dupFabbisogno(srcKey){
+  const wk=curWeek();if(!wk)return;
+  const allTargets=[];
+  DAY_NAMES.forEach((dn,i)=>{
+    const t=wk.day_config[i]||'cena';
+    if(t==='chiuso')return;
+    if(t==='pranzo_cena'){
+      allTargets.push({key:`${i}_pranzo`,label:`${dn} Pranzo`});
+      allTargets.push({key:`${i}_cena`,label:`${dn} Cena`});
+    } else {
+      allTargets.push({key:String(i),label:dn});
+    }
+  });
+  const targets=allTargets.filter(t=>t.key!==srcKey);
+  const msg='Duplica su quale giorno?\n\n'+targets.map((t,i)=>`${i+1}. ${t.label}`).join('\n')+'\n\nInserisci il numero:';
+  const ans=prompt(msg);
+  if(!ans)return;
+  const idx=parseInt(ans)-1;
+  if(isNaN(idx)||idx<0||idx>=targets.length){alert('Numero non valido.');return;}
+  const destKey=targets[idx].key;
+  const src=G.fabbisogno[srcKey]||{slots:[],maxRiposi:0,roleReqs:{}};
+  G.fabbisogno[destKey]=JSON.parse(JSON.stringify(src));
+  renderFabbisogno();
+  alert(`Copiato su "${targets[idx].label}"! Ricordati di salvare.`);
+}
 async function saveFabbisogno(){await dbSaveConfig('fabbisogno',G.fabbisogno);alert('Fabbisogno salvato!');}
 
 // ===== GENERA BOZZA =====
@@ -1035,61 +1202,110 @@ function generaBozza(){
     return countAvail(a.fabKey,fa?fa.slots:[]) - countAvail(b.fabKey,fb?fb.slots:[]);
   });
 
-  // Track per-day assignments — key insight for P+C:
-  // assignedToday[di] = Set of staffIds assigned to ANY service that day
-  // If a person is assigned to pranzo, they can't be assigned to cena UNLESS their shift is spezzato
-  // A spezzato shift has both s1+e1 AND s2+e2
-  const assignedToday={};
-  openDays.forEach(d=>{assignedToday[d.idx]=new Set();});
-  // Track which service each person is assigned to on each day
-  const serviceAssigned={};// serviceAssigned[di][pid] = 'pranzo'|'cena'|'both'|null
+  // Track per-day assignments
+  const serviceAssigned={};openDays.forEach(d=>{serviceAssigned[d.idx]={};});
+  const newRoleAssign={};// pre-assigned roles from roleReqs
 
-  openDays.forEach(d=>{serviceAssigned[d.idx]={};});
+  // Helper: get compatible shifts for a role
+  function compatShiftsForRole(role){
+    return G.shifts.filter(s=>!isFuoriServizio(s.code)&&(s.compatibleRoles||[]).includes(role)).map(s=>s.code);
+  }
 
-  // PASS 1: assign working shifts
+  // PASS 1: assign staff based on roleReqs (primary) + old slots (fallback)
   sessions.forEach(sess=>{
-    const {di,fabKey,servizio,dayName}=sess;
+    const{di,fabKey,servizio,dayName}=sess;
     const fab=G.fabbisogno[fabKey];
-    if(!fab||!fab.slots||!fab.slots.length)return;
+    if(!fab)return;
+    const assignedInSession=new Set();
 
-    fab.slots.forEach(slot=>{
+    // Build role demand: max count per role across fasce for this servizio
+    const roleMax={};
+    Object.entries(fab.roleReqs||{}).forEach(([fid,reqs])=>{
+      const f=ALL_FASCE.find(f=>f.id==fid);if(!f)return;
+      if(servizio==='pranzo'&&f.tipo!=='pranzo')return;
+      if(servizio==='cena'&&f.tipo!=='cena')return;
+      Object.entries(reqs).forEach(([role,count])=>{
+        roleMax[role]=Math.max(roleMax[role]||0,count);
+      });
+    });
+
+    // Assign people for each needed role
+    Object.entries(roleMax).forEach(([neededRole,count])=>{
+      if(count<=0)return;
+      const compatShifts=compatShiftsForRole(neededRole);
+      let assigned=0;
+      while(assigned<count){
+        function findBestForRole(ignoreOffReq){
+          const cands=[];
+          eligibleStaff.forEach(p=>{
+            if(assignedInSession.has(p.id))return;
+            const svc=serviceAssigned[di][p.id];
+            if(svc===servizio)return;
+            if(svc&&svc!==servizio)return;
+            if(weekWorkDays[p.id]>=(p.workDaysPerWeek||5))return;
+            if(!ignoreOffReq&&(p.offRequests||[]).includes(di))return;
+            const doable=compatShifts.length>0
+              ?compatShifts.filter(c=>(p.canDo||[]).includes(c))
+              :(p.canDo||[]).filter(c=>!isFuoriServizio(c));
+            if(!doable.length)return;
+            doable.sort((a,b)=>(shiftCount[p.id][a]||0)-(shiftCount[p.id][b]||0));
+            const pref=(p.preferredRoles||{})[String(servizio==='pranzo'?1:4)]||'';
+            const bonus=pref===neededRole?-0.5:0;
+            cands.push({p,bestCode:doable[0],score:(shiftCount[p.id][doable[0]]||0)+(weekWorkDays[p.id]*0.4)+bonus});
+          });
+          cands.sort((a,b)=>a.score-b.score);return cands[0]||null;
+        }
+        let best=findBestForRole(false);let usedFallback=false;
+        if(!best){best=findBestForRole(true);usedFallback=!!best;}
+        if(!best){errors.push(`${dayName}${servizio?' ('+servizio+')':''}: nessuno per ruolo ${neededRole}`);break;}
+        const storeKey=servizio==='pranzo'?best.p.id+'_P':servizio==='cena'?best.p.id+'_C':best.p.id;
+        newAssign[di][storeKey]=best.bestCode;
+        assignedInSession.add(best.p.id);
+        if(!serviceAssigned[di][best.p.id]){serviceAssigned[di][best.p.id]=servizio||'any';weekWorkDays[best.p.id]++;}
+        shiftCount[best.p.id][best.bestCode]=(shiftCount[best.p.id][best.bestCode]||0)+1;
+        // Pre-assign role
+        ALL_FASCE.forEach(f=>{
+          if(servizio==='pranzo'&&f.tipo!=='pranzo')return;
+          if(servizio==='cena'&&f.tipo!=='cena')return;
+          if(!shiftInFascia(best.bestCode,f.id))return;
+          const rk=`${di}_${f.id}_${best.p.id}`;
+          if(!newRoleAssign[rk])newRoleAssign[rk]=neededRole;
+        });
+        if(usedFallback)warnings.push(`${dayName}: ${best.p.name} → ${neededRole} nonostante giorno libero`);
+        assigned++;
+      }
+    });
+
+    // Fallback: old-style slots for remaining needed people
+    (fab.slots||[]).forEach(slot=>{
       const acceptableCodes=slot.codes;
-      function findBest(ignoreOffReq){
-        const candidates=[];
+      function findBestSlot(ignoreOffReq){
+        const cands=[];
         eligibleStaff.forEach(p=>{
-          // Check if already assigned to this service today
+          if(assignedInSession.has(p.id))return;
           const svc=serviceAssigned[di][p.id];
-          if(svc===servizio)return;// already doing this service
-          if(svc&&svc!==servizio){
-            // Already assigned to OTHER service — only allow if they have a spezzato shift for BOTH
-            // We don't auto-assign spezzato, so block
-            return;
-          }
+          if(svc===servizio)return;
+          if(svc&&svc!==servizio)return;
           if(weekWorkDays[p.id]>=(p.workDaysPerWeek||5))return;
           if(!ignoreOffReq&&(p.offRequests||[]).includes(di))return;
           const doable=acceptableCodes.filter(c=>(p.canDo||[]).includes(c));
           if(!doable.length)return;
           doable.sort((a,b)=>(shiftCount[p.id][a]||0)-(shiftCount[p.id][b]||0));
-          candidates.push({p,bestCode:doable[0],score:(shiftCount[p.id][doable[0]]||0)+(weekWorkDays[p.id]*0.4)});
+          cands.push({p,bestCode:doable[0],score:(shiftCount[p.id][doable[0]]||0)+(weekWorkDays[p.id]*0.4)});
         });
-        candidates.sort((a,b)=>a.score-b.score);
-        return candidates[0]||null;
+        cands.sort((a,b)=>a.score-b.score);return cands[0]||null;
       }
-      let best=findBest(false);let usedFallback=false;
-      if(!best){best=findBest(true);usedFallback=!!best;}
+      let best=findBestSlot(false);let usedFallback=false;
+      if(!best){best=findBestSlot(true);usedFallback=!!best;}
       if(best){
         const storeKey=servizio==='pranzo'?best.p.id+'_P':servizio==='cena'?best.p.id+'_C':best.p.id;
         newAssign[di][storeKey]=best.bestCode;
-        // Mark service assigned — P+C day counts as ONE working day total
-        const prevSvc=serviceAssigned[di][best.p.id];
-        if(!prevSvc){
-          serviceAssigned[di][best.p.id]=servizio||'any';
-          weekWorkDays[best.p.id]++;// count once per day, not per service
-        }
+        assignedInSession.add(best.p.id);
+        if(!serviceAssigned[di][best.p.id]){serviceAssigned[di][best.p.id]=servizio||'any';weekWorkDays[best.p.id]++;}
         shiftCount[best.p.id][best.bestCode]=(shiftCount[best.p.id][best.bestCode]||0)+1;
-        if(usedFallback)warnings.push(`${dayName}${servizio?' ('+servizio+')':''}: ${best.p.name} assegnato a ${best.bestCode} nonostante richiesta giorno libero`);
+        if(usedFallback)warnings.push(`${dayName}: ${best.p.name} assegnato nonostante giorno libero`);
       } else {
-        errors.push(`${dayName}${servizio?' ('+servizio+')':''}: nessuno disponibile per lo slot [${acceptableCodes.join('/')}]`);
+        errors.push(`${dayName}${servizio?' ('+servizio+')':''}: nessuno per slot [${acceptableCodes.join('/')}]`);
       }
     });
   });
@@ -1139,6 +1355,8 @@ function generaBozza(){
   });
 
   wk.shift_assign=newAssign;
+  // Merge pre-assigned roles (from roleReqs) into role_assign
+  Object.assign(wk.role_assign,newRoleAssign);
   dbSaveWeek(wk);
   renderTurni();
 
@@ -1168,7 +1386,7 @@ function legDrop(e,i){
 function renderLegenda(){
   const el=document.getElementById('leg-main-table');if(!el)return;
   const fh=ALL_FASCE.map(f=>`<th class="cb-th ${f.tipo==='pranzo'?'fp':'fc'}">${f.label}</th>`).join('');
-  let h=`<thead><tr><th style="width:20px;"></th><th style="text-align:left;padding:5px 8px;">Codice</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Pranzo</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Cena</th>${fh}<th></th></tr></thead><tbody>`;
+  let h=`<thead><tr><th style="width:20px;"></th><th style="text-align:left;padding:5px 8px;">Codice</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Pranzo</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Cena</th>${fh}<th style="text-align:left;min-width:160px;padding:5px 8px;background:#f0e6ff;color:#7e22ce;">Ruoli compatibili</th><th></th></tr></thead><tbody>`;
   G.shifts.forEach((s,i)=>{
     h+=`<tr draggable="true" ondragstart="legDragStart(event,${i})" ondragover="legDragOver(event,${i})" ondrop="legDrop(event,${i})" style="cursor:grab;">
       <td style="padding:3px 5px;color:var(--text3);font-size:16px;cursor:grab;">⠿</td>
@@ -1177,11 +1395,13 @@ function renderLegenda(){
       <td><input type="text" value="${s.s1||''}" placeholder="inizio" onchange="G.shifts[${i}].s1=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e1||''}" placeholder="fine" onchange="G.shifts[${i}].e1=this.value" style="width:46px;font-family:inherit;"></td>
       <td><input type="text" value="${s.s2||''}" placeholder="inizio" onchange="G.shifts[${i}].s2=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e2||''}" placeholder="fine" onchange="G.shifts[${i}].e2=this.value" style="width:46px;font-family:inherit;"></td>`;
     ALL_FASCE.forEach(f=>{h+=`<td><input type="checkbox" ${s.fasce&&s.fasce.includes(f.id)?'checked':''} onchange="toggleFascia(${i},${f.id},this.checked)"></td>`;});
-    h+=`<td><button style="background:none;border:none;cursor:pointer;color:var(--red-text);font-size:14px;padding:0 4px;" onclick="remShift(${i})">×</button></td></tr>`;
+    const compatRoles=s.compatibleRoles||[];
+    h+=`<td style="padding:3px 6px;background:#f9f3ff;"><div style="display:flex;flex-wrap:wrap;gap:2px;">${ROLES.map(r=>{const on=compatRoles.includes(r);return`<label style="display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;padding:1px 4px;border-radius:3px;background:${on?'#7e22ce':'transparent'};color:${on?'#fff':'var(--text2)'};border:0.5px solid ${on?'#7e22ce':'var(--border)'};"><input type="checkbox" style="display:none;" ${on?'checked':''} onchange="toggleCompatRole(${i},'${r}',this.checked)">${r}</label>`;}).join('')}</div></td>`;    h+=`<td><button style="background:none;border:none;cursor:pointer;color:var(--red-text);font-size:14px;padding:0 4px;" onclick="remShift(${i})">×</button></td></tr>`;
   });
   el.innerHTML=h+'</tbody>';
 }
 function toggleFascia(i,fid,on){const s=G.shifts[i];if(!s.fasce)s.fasce=[];if(on){if(!s.fasce.includes(fid))s.fasce.push(fid);}else{s.fasce=s.fasce.filter(x=>x!==fid);}renderLegSidebar();}
+function toggleCompatRole(i,role,on){const s=G.shifts[i];if(!s.compatibleRoles)s.compatibleRoles=[];if(on){if(!s.compatibleRoles.includes(role))s.compatibleRoles.push(role);}else{s.compatibleRoles=s.compatibleRoles.filter(r=>r!==role);}renderLegenda();}
 async function saveShifts(){await dbSaveShifts();renderAll();alert('Legenda salvata!');}
 function remShift(i){G.shifts.splice(i,1);renderLegenda();}
 function addShift(){G.shifts.push({code:'NEW',s1:'',e1:'',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[]});renderLegenda();}
@@ -1203,9 +1423,242 @@ async function saveConfig(){
   await dbSaveWeek(wk);alert('Configurazione salvata!');
 }
 
+
+// ===== BOZZA =====
+async function saveDraft(){
+  const wk=curWeek();if(!wk)return;
+  wk.draft_assign=JSON.parse(JSON.stringify(wk.shift_assign));
+  wk.draft_role_assign=JSON.parse(JSON.stringify(wk.role_assign));
+  await dbSaveWeek(wk);
+  showDraftPanel();
+  alert('Bozza salvata!');
+}
+async function restoreDraft(){
+  const wk=curWeek();if(!wk)return;
+  if(!wk.draft_assign){alert('Nessuna bozza salvata per questa settimana.');return;}
+  if(!confirm('Ripristinare la bozza? Le modifiche attuali andranno perse.'))return;
+  pushUndo(wk);
+  wk.shift_assign=JSON.parse(JSON.stringify(wk.draft_assign));
+  wk.role_assign=JSON.parse(JSON.stringify(wk.draft_role_assign||{}));
+  await dbSaveWeek(wk);renderTurni();renderDayContent();
+}
+function showDraftPanel(){
+  const wk=isManager()?curWeek():null;
+  const el=document.getElementById('draft-panel');if(!el)return;
+  el.style.display=(wk&&wk.draft_assign)?'flex':'none';
+}
+
+// ===== AUTO FILL ROLES =====
+function autoFillRoles(){
+  const wk=curWeek();if(!wk)return;
+  const di=wk.selected_day;const tipo=wk.day_config[di];
+  const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
+  const fasce=fasciaIdxs.map(i=>ALL_FASCE[i]);
+  pushUndo(wk);
+  fasce.forEach(f=>{
+    const fabKey=tipo==='pranzo_cena'?(f.tipo==='pranzo'?`${di}_pranzo`:`${di}_cena`):String(di);
+    const fab=G.fabbisogno[fabKey];
+    const roleReqs=(fab&&fab.roleReqs&&fab.roleReqs[f.id])||{};
+    const roleCount={};
+    G.staff.forEach(p=>{
+      if(!personInFascia(wk,di,p.id,f,tipo))return;
+      const key=`${di}_${f.id}_${p.id}`;
+      if(wk.role_assign[key])return;// skip if already set
+      // Check role rules first
+      let assignedRole=null;
+      for(const rr of (G.roleRules||[])){
+        if(!rr.targetPersonId||rr.targetPersonId!==p.id)continue;
+        if(rr.excludeDays&&rr.excludeDays.includes(di))continue;
+        const condCode=getShiftCode(wk,di,rr.condPersonId,null)||getShiftCode(wk,di,rr.condPersonId,'cena')||getShiftCode(wk,di,rr.condPersonId,'pranzo');
+        const condWorking=condCode&&!isFuoriServizio(condCode);
+        if(rr.condType==='present'&&condWorking){assignedRole=rr.targetRole;break;}
+        if(rr.condType==='absent'&&!condWorking){assignedRole=rr.targetRole;break;}
+      }
+      if(!assignedRole){
+        const pref=(p.preferredRoles||{})[String(f.id)];
+        const sec=(p.secondaryRoles||{})[String(f.id)];
+        if(pref){
+          const req=roleReqs[pref]||0;
+          const cur=roleCount[pref]||0;
+          assignedRole=(req>0&&cur>=req)?(sec||pref):pref;
+        } else if(sec){assignedRole=sec;}
+      }
+      if(assignedRole){
+        wk.role_assign[key]=assignedRole;
+        roleCount[assignedRole]=(roleCount[assignedRole]||0)+1;
+      }
+    });
+  });
+  applyPosRules(wk,di,tipo,wk.role_assign);
+  dbSaveWeek(wk);renderDayContent();
+}
+
+// ===== INCOMPLETEZZA =====
+function checkIncompleteness(wk){
+  const issues=[];
+  const openDays=DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:wk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
+  openDays.forEach(d=>{
+    const di=d.idx;const tipo=d.tipo;
+    const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
+    fasciaIdxs.forEach(fi=>{
+      const f=ALL_FASCE[fi];
+      const fabKey=tipo==='pranzo_cena'?(f.tipo==='pranzo'?`${di}_pranzo`:`${di}_cena`):String(di);
+      const fab=G.fabbisogno[fabKey];
+      if(!fab||!fab.roleReqs||!fab.roleReqs[f.id])return;
+      Object.entries(fab.roleReqs[f.id]).forEach(([roleName,required])=>{
+        if(!required||required<=0)return;
+        const actual=G.staff.filter(p=>{
+          const key=`${di}_${f.id}_${p.id}`;
+          return(wk.role_assign[key])===roleName&&personInFascia(wk,di,p.id,f,tipo);
+        }).length;
+        if(actual<required)issues.push(`${d.name} ${f.label}: ${roleName} ${actual}/${required}`);
+      });
+    });
+  });
+  return issues;
+}
+function updateIncompleteAlert(){
+  const el=document.getElementById('incomplete-alert');if(!el)return;
+  const wk=curWeek();if(!wk){el.style.display='none';return;}
+  const issues=checkIncompleteness(wk);
+  if(issues.length>0){el.style.display='block';el.textContent=`⚠ ${issues.length} ruoli non coperti`;el.title=issues.join('\n');}
+  else el.style.display='none';
+}
+
+// ===== REGOLE RUOLO =====
+function renderRoleRules(){
+  const el=document.getElementById('role-rules-list');if(!el)return;
+  const DAY_SHORT=['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
+  if(!G.roleRules||!G.roleRules.length){el.innerHTML='<p style="font-size:12px;color:var(--text3);margin-bottom:8px;">Nessuna regola ruolo.</p>';return;}
+  el.innerHTML=G.roleRules.map((r,i)=>`
+    <div class="role-rule-row">
+      <span style="font-size:12px;color:var(--text2);">Se</span>
+      <select onchange="G.roleRules[${i}].condPersonId=this.value" style="font-size:12px;padding:4px 7px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+        <option value="">— persona —</option>
+        ${G.staff.filter(p=>!isExtra(p)).map(p=>`<option value="${p.id}"${p.id===r.condPersonId?' selected':''}>${p.name}</option>`).join('')}
+      </select>
+      <select onchange="G.roleRules[${i}].condType=this.value" style="font-size:12px;padding:4px 7px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+        <option value="present"${r.condType==='present'?' selected':''}>lavora</option>
+        <option value="absent"${r.condType==='absent'?' selected':''}>è assente</option>
+      </select>
+      <span style="font-size:12px;color:var(--text2);">→</span>
+      <select onchange="G.roleRules[${i}].targetPersonId=this.value" style="font-size:12px;padding:4px 7px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+        <option value="">— persona —</option>
+        ${G.staff.filter(p=>!isExtra(p)).map(p=>`<option value="${p.id}"${p.id===r.targetPersonId?' selected':''}>${p.name}</option>`).join('')}
+      </select>
+      <span style="font-size:12px;color:var(--text2);">fa</span>
+      <select onchange="G.roleRules[${i}].targetRole=this.value" style="font-size:12px;padding:4px 7px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+        <option value="">— ruolo —</option>
+        ${ROLES.map(ro=>`<option value="${ro}"${ro===r.targetRole?' selected':''}>${ro}</option>`).join('')}
+      </select>
+      <span style="font-size:11px;color:var(--text2);">escludi:</span>
+      <div class="day-pills">
+        ${DAY_SHORT.map((ds,di)=>{const excl=(r.excludeDays||[]).includes(di);return`<span class="day-pill ${excl?'active':''}" onclick="toggleRuleExclDay(${i},${di})">${ds}</span>`;}).join('')}
+      </div>
+      <button class="btn danger" style="font-size:11px;padding:3px 8px;margin-left:auto;" onclick="removeRoleRule(${i})">Rimuovi</button>
+    </div>`).join('');
+}
+function toggleRuleExclDay(ri,di){
+  if(!G.roleRules[ri].excludeDays)G.roleRules[ri].excludeDays=[];
+  const arr=G.roleRules[ri].excludeDays;
+  const idx=arr.indexOf(di);
+  if(idx>=0)arr.splice(idx,1);else arr.push(di);
+  renderRoleRules();
+}
+function addRoleRule(){G.roleRules.push({condType:'present',condPersonId:'',targetPersonId:'',targetRole:'',excludeDays:[]});renderRoleRules();}
+function removeRoleRule(i){G.roleRules.splice(i,1);renderRoleRules();}
+async function saveRoleRules(){await dbSaveConfig('roleRules',G.roleRules);alert('Regole ruolo salvate!');}
+
+// ===== RUOLI PREFERITI IN STAFF =====
+async function setPrefRole(pid,fasciaId,type,val){
+  const p=G.staff.find(s=>s.id===pid);if(!p)return;
+  const field=type==='pref'?'preferredRoles':'secondaryRoles';
+  if(!p[field])p[field]={};
+  if(val)p[field][String(fasciaId)]=val;
+  else delete p[field][String(fasciaId)];
+  await dbSaveStaff();
+}
+
+
+// ===== ZONE HELPER =====
+// DEHOOR and PASS BEV FUORI are same zone; all others are their own zone
+function getRoleZone(role){
+  if(role==='DEHOOR'||role==='PASS BEV FUORI')return'FUORI_DEHOOR';
+  return role;
+}
+
+// ===== POSIZIONAMENTO RULES =====
+function renderPosRules(){
+  const el=document.getElementById('pos-rules-list');if(!el)return;
+  if(!G.posRules||!G.posRules.length){el.innerHTML='<p style="font-size:12px;color:var(--text3);margin-bottom:8px;">Nessuna regola posizionamento.</p>';return;}
+  const nonExtra=G.staff.filter(p=>!isExtra(p));
+  el.innerHTML=G.posRules.map((r,i)=>`
+    <div class="role-rule-row">
+      <select onchange="G.posRules[${i}].personA=this.value" style="font-size:12px;padding:4px 7px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+        <option value="">— persona A —</option>
+        ${nonExtra.map(p=>`<option value="${p.id}"${p.id===r.personA?' selected':''}>${p.name}</option>`).join('')}
+      </select>
+      <span style="font-size:12px;color:var(--text2);">e</span>
+      <select onchange="G.posRules[${i}].personB=this.value" style="font-size:12px;padding:4px 7px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+        <option value="">— persona B —</option>
+        ${nonExtra.map(p=>`<option value="${p.id}"${p.id===r.personB?' selected':''}>${p.name}</option>`).join('')}
+      </select>
+      <select onchange="G.posRules[${i}].type=this.value" style="font-size:12px;padding:4px 7px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+        <option value="different"${r.type==='different'?' selected':''}>zone diverse</option>
+        <option value="same"${r.type==='same'?' selected':''}>stessa zona</option>
+      </select>
+      <span style="font-size:11px;color:var(--text2);">escludi:</span>
+      <div class="day-pills">
+        ${['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].map((ds,di)=>{const excl=(r.excludeDays||[]).includes(di);return`<span class="day-pill ${excl?'active':''}" onclick="togglePosExclDay(${i},${di})">${ds}</span>`;}).join('')}
+      </div>
+      <button class="btn danger" style="font-size:11px;padding:3px 8px;margin-left:auto;" onclick="removePosRule(${i})">Rimuovi</button>
+    </div>`).join('');
+}
+function togglePosExclDay(ri,di){
+  if(!G.posRules[ri].excludeDays)G.posRules[ri].excludeDays=[];
+  const arr=G.posRules[ri].excludeDays;
+  const idx=arr.indexOf(di);
+  if(idx>=0)arr.splice(idx,1);else arr.push(di);
+  renderPosRules();
+}
+function addPosRule(){G.posRules.push({personA:'',personB:'',type:'different',excludeDays:[]});renderPosRules();}
+function removePosRule(i){G.posRules.splice(i,1);renderPosRules();}
+async function savePosRules(){await dbSaveConfig('posRules',G.posRules);alert('Regole posizionamento salvate!');}
+
+// Apply posRules when compiling roles auto
+function applyPosRules(wk,di,tipo,roleAssign){
+  if(!G.posRules||!G.posRules.length)return;
+  // For each pos rule, check if one person has a role and adjust the other
+  G.posRules.forEach(rule=>{
+    if(!rule.personA||!rule.personB)return;
+    if((rule.excludeDays||[]).includes(di))return;
+    const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
+    fasciaIdxs.forEach(fi=>{
+      const f=ALL_FASCE[fi];
+      const keyA=`${di}_${f.id}_${rule.personA}`;
+      const keyB=`${di}_${f.id}_${rule.personB}`;
+      const roleA=roleAssign[keyA];
+      const roleB=roleAssign[keyB];
+      if(!roleA||!roleB)return;// can't check if one is missing
+      const zoneA=getRoleZone(roleA);
+      const zoneB=getRoleZone(roleB);
+      if(rule.type==='different'&&zoneA===zoneB){
+        // Violation: try to move person B to their secondary role
+        const pB=G.staff.find(s=>s.id===rule.personB);
+        if(!pB)return;
+        const sec=(pB.secondaryRoles||{})[String(f.id)];
+        if(sec&&getRoleZone(sec)!==zoneA){
+          roleAssign[keyB]=sec;
+        }
+      }
+    });
+  });
+}
+
 function renderAll(){
   renderWeekSelector();renderDepWeekSelector();renderLegSidebar();renderTurni();renderDayNav();
-  if(isManager()){renderStaff();renderLegenda();renderConfig();renderFabbisogno();renderEquivalenze();renderRegole();}
+  if(isManager()){renderStaff();renderLegenda();renderConfig();renderFabbisogno();renderEquivalenze();renderRegole();renderRoleRules();renderPosRules();}
+  showDraftPanel();
 }
 
 async function init(){
