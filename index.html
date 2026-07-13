@@ -273,17 +273,33 @@ function weekToDb(w){
   if(w.draft_role_assign!==undefined)obj.draft_role_assign=w.draft_role_assign||null;
   return obj;
 }
-async function dbSaveWeek(w){try{await sb.from('weeks').upsert(weekToDb(w));setSyncStatus('ok');}catch(e){setSyncStatus('err');}}
-async function dbSaveShifts(){try{await sb.from('shifts').delete().neq('code','__none__');if(G.shifts.length)await sb.from('shifts').insert(G.shifts);setSyncStatus('ok');}catch(e){setSyncStatus('err');}}
-async function dbSaveStaff(){
+async function dbSaveWeek(w){try{await sb.from('weeks').upsert(weekToDb(w));setSyncStatus('ok');}catch(e){console.error('dbSaveWeek error:',e);setSyncStatus('err');}}
+async function dbSaveShifts(){
   try{
-    await sb.from('staff').delete().neq('id','__none__');
-    if(G.staff.length){
-      const rows=G.staff.map(s=>({id:s.id,name:s.name,role:s.role,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{}}));
-      await sb.from('staff').insert(rows);
+    if(G.shifts.length){
+      await sb.from('shifts').upsert(G.shifts,{onConflict:'code'});
+      const codes=G.shifts.map(s=>s.code);
+      await sb.from('shifts').delete().not('code','in',`(${codes.map(c=>`"${c}"`).join(',')})`);
+    } else {
+      await sb.from('shifts').delete().neq('code','__none__');
     }
     setSyncStatus('ok');
-  }catch(e){setSyncStatus('err');}
+  }catch(e){console.error('dbSaveShifts error:',e);setSyncStatus('err');}
+}
+async function dbSaveStaff(){
+  try{
+    if(G.staff.length){
+      const rows=G.staff.map(s=>({id:s.id,name:s.name,role:s.role,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{}}));
+      // Upsert: update if exists, insert if not — never deletes
+      await sb.from('staff').upsert(rows,{onConflict:'id'});
+      // Remove staff that no longer exist
+      const ids=G.staff.map(s=>s.id);
+      await sb.from('staff').delete().not('id','in',`(${ids.map(id=>`"${id}"`).join(',')})`);
+    } else {
+      await sb.from('staff').delete().neq('id','__none__');
+    }
+    setSyncStatus('ok');
+  }catch(e){console.error('dbSaveStaff error:',e);setSyncStatus('err');}
 }
 async function dbSaveConfig(k,v){try{await sb.from('config').upsert({key:k,value:typeof v==='string'?v:JSON.stringify(v)});setSyncStatus('ok');}catch(e){setSyncStatus('err');}}
 function setSyncStatus(s){syncStatus=s;const el=document.getElementById('sync-status');if(el){el.textContent=s==='ok'?'● Sincronizzato':'● Errore';el.className='sync-status '+(s==='ok'?'ok':'err');}}
