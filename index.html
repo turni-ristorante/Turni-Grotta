@@ -267,13 +267,30 @@ function migrateFabbisogno(){
   G.fabbisogno=newFab;
 }
 function weekToDb(w){
-  const obj={id:w.id,name:w.name,published:w.published||false,day_config:w.day_config,shift_assign:w.shift_assign,role_assign:w.role_assign,selected_day:w.selected_day||0};
-  if(w.startDate!==undefined)obj.startDate=w.startDate||'';
-  if(w.draft_assign!==undefined)obj.draft_assign=w.draft_assign||null;
-  if(w.draft_role_assign!==undefined)obj.draft_role_assign=w.draft_role_assign||null;
+  // Only include fields that exist and are not null to avoid upsert issues
+  const obj={
+    id:w.id,
+    name:w.name,
+    published:w.published||false,
+    day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],
+    shift_assign:w.shift_assign||{},
+    role_assign:w.role_assign||{},
+    selected_day:w.selected_day||0,
+    startDate:w.startDate||''
+  };
+  if(w.draft_assign)obj.draft_assign=w.draft_assign;
+  if(w.draft_role_assign)obj.draft_role_assign=w.draft_role_assign;
   return obj;
 }
-async function dbSaveWeek(w){try{await sb.from('weeks').upsert(weekToDb(w));setSyncStatus('ok');}catch(e){console.error('dbSaveWeek error:',e);setSyncStatus('err');}}
+async function dbSaveWeek(w){
+  try{
+    const data=weekToDb(w);
+    console.log('Saving week:', w.id, 'shift_assign keys:', Object.keys(data.shift_assign).length);
+    const {error}=await sb.from('weeks').upsert(data);
+    if(error){console.error('dbSaveWeek error:',error);setSyncStatus('err');}
+    else{console.log('Week saved OK');setSyncStatus('ok');}
+  }catch(e){console.error('dbSaveWeek exception:',e);setSyncStatus('err');}
+}
 async function dbSaveShifts(){
   try{
     if(G.shifts.length){
