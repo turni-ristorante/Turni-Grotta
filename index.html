@@ -253,7 +253,8 @@ async function dbLoad(){
     if(shifts&&shifts.length>0){G.shifts=shifts.map(s=>({...s,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[]}));}
     else{G.shifts=JSON.parse(JSON.stringify(DEF_SHIFTS));await dbSaveShifts();}
     const {data:weeks}=await sb.from('weeks').select('*');
-    G.weeks=(weeks||[]).map(w=>({...w,day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||'',draft_assign:w.draft_assign||null,draft_role_assign:w.draft_role_assign||null}));
+    G.weeks=(weeks||[]).map(w=>({...w,day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||'',draft_assign:w.draft_assign||null,draft_role_assign:w.draft_role_assign||null,last_saved:w.last_saved||null}));
+    console.log('Loaded weeks from Supabase:', G.weeks.map(w=>({name:w.name,last_saved:w.last_saved,days:Object.keys(w.shift_assign).length})));
     if(!G.weeks.length){const w=emptyWeek('Prima settimana');G.weeks=[w];await sb.from('weeks').insert(weekToDb(w));}
     if(!G.currentWeekId||!G.weeks.find(w=>w.id===G.currentWeekId)){G.currentWeekId=G.weeks[0].id;await sb.from('config').upsert({key:'currentWeekId',value:G.currentWeekId});}
     migrateFabbisogno();
@@ -267,7 +268,6 @@ function migrateFabbisogno(){
   G.fabbisogno=newFab;
 }
 function weekToDb(w){
-  // Only include fields that exist and are not null to avoid upsert issues
   const obj={
     id:w.id,
     name:w.name,
@@ -276,7 +276,8 @@ function weekToDb(w){
     shift_assign:w.shift_assign||{},
     role_assign:w.role_assign||{},
     selected_day:w.selected_day||0,
-    startDate:w.startDate||''
+    startDate:w.startDate||'',
+    last_saved:new Date().toISOString()
   };
   if(w.draft_assign)obj.draft_assign=w.draft_assign;
   if(w.draft_role_assign)obj.draft_role_assign=w.draft_role_assign;
@@ -285,10 +286,18 @@ function weekToDb(w){
 async function dbSaveWeek(w){
   try{
     const data=weekToDb(w);
-    console.log('Saving week:', w.id, 'shift_assign keys:', Object.keys(data.shift_assign).length);
+    const ts=data.last_saved;
+    console.log('Saving week:', w.id, 'at', ts, 'shift_assign days:', Object.keys(data.shift_assign).length);
     const {error}=await sb.from('weeks').upsert(data);
-    if(error){console.error('dbSaveWeek error:',error);setSyncStatus('err');}
-    else{console.log('Week saved OK');setSyncStatus('ok');}
+    if(error){
+      console.error('dbSaveWeek error:',error);
+      setSyncStatus('err');
+    } else {
+      console.log('Week saved OK at', ts);
+      // Update last_saved in memory too
+      w.last_saved=ts;
+      setSyncStatus('ok');
+    }
   }catch(e){console.error('dbSaveWeek exception:',e);setSyncStatus('err');}
 }
 async function dbSaveShifts(){
