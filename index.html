@@ -229,8 +229,8 @@ const DEF_SHIFTS=[
   {code:'E16',s1:'',e1:'',s2:'20:00',e2:'C',is_off:false,is_ferie:false,fasce:[4,5]},
 ];
 
-let G={staff:[],shifts:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[]};
-let role='';let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
+let G={staff:[],shifts:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
+let role='';let currentManager=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
 
 function isExtra(p){return (p.role||'').trim().toUpperCase()==='EXTRA';}
 function getEquivGroup(code){const grp=G.equivalenze.find(g=>g.includes(code));return grp||[code];}
@@ -257,6 +257,8 @@ async function dbLoad(){
     console.log('Loaded weeks from Supabase:', G.weeks.map(w=>({name:w.name,last_saved:w.last_saved,days:Object.keys(w.shift_assign).length})));
     if(!G.weeks.length){const w=emptyWeek('Prima settimana');G.weeks=[w];await sb.from('weeks').insert(weekToDb(w));}
     if(!G.currentWeekId||!G.weeks.find(w=>w.id===G.currentWeekId)){G.currentWeekId=G.weeks[0].id;await sb.from('config').upsert({key:'currentWeekId',value:G.currentWeekId});}
+    const {data:managers}=await sb.from('managers').select('*');
+    G.managers=managers||[];
     migrateFabbisogno();
     setSyncStatus('ok');return true;
   }catch(e){console.error(e);setSyncStatus('err');return false;}
@@ -277,7 +279,8 @@ function weekToDb(w){
     role_assign:w.role_assign||{},
     selected_day:w.selected_day||0,
     startDate:w.startDate||'',
-    last_saved:new Date().toISOString()
+    last_saved:new Date().toISOString(),
+    last_saved_by:currentManager?currentManager.name:''
   };
   if(w.draft_assign)obj.draft_assign=w.draft_assign;
   if(w.draft_role_assign)obj.draft_role_assign=w.draft_role_assign;
@@ -354,7 +357,7 @@ function renderApp(){
   if(!role){renderLogin();return;}
   document.getElementById('app').innerHTML=`
     <div class="topbar">
-      <span class="role-badge ${role}">${role==='manager'?'Manager':'Dipendente'}</span>
+      <span class="role-badge ${role}">${role==='manager'?(currentManager?currentManager.name:'Manager'):'Dipendente'}</span>
       ${isManager()?`<select class="week-selector" id="week-selector" onchange="switchWeek(this.value)"></select>
         <button class="btn primary" style="font-size:11px;padding:4px 10px;" onclick="goTab('settimane')">Settimane</button>`
       :`<select class="week-selector" id="week-selector-dep" onchange="switchWeekDep(this.value)" style="max-width:220px;"></select>`}
@@ -453,6 +456,31 @@ function renderApp(){
       <div class="config-grid" id="config-grid"></div>
       <button class="btn primary" onclick="saveConfig()">Salva</button>
     </div>
+    <!-- ARCHIVIO VERSIONI -->
+    <div id="sec-archivio" class="sec">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Storico delle versioni salvate. Puoi ripristinare qualsiasi versione precedente.</p>
+      <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+        <label style="font-size:12px;color:var(--text2);">Settimana:</label>
+        <select id="archive-week-sel" onchange="loadArchive()" style="font-size:12px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;"></select>
+      </div>
+      <div id="archive-list"></div>
+    </div>
+
+    <!-- GESTIONE MANAGER -->
+    <div id="sec-managers" class="sec">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Gestisci gli account manager. Ogni manager ha nome utente e password propri.</p>
+      <div id="managers-list"></div>
+      <div style="margin-top:1rem;padding-top:1rem;border-top:0.5px solid var(--border);">
+        <p style="font-size:12px;font-weight:500;margin-bottom:8px;">Aggiungi manager</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="new-mgr-name" placeholder="Nome" style="width:140px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
+          <input type="password" id="new-mgr-pwd" placeholder="Password" style="width:140px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
+          <button class="btn primary" onclick="addManager()">+ Aggiungi</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTIMANE -->
     <div id="sec-settimane" class="sec">
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Gestisci le settimane. Pubblica per renderle visibili ai dipendenti.</p>
       <div style="display:flex;gap:8px;margin-bottom:1.25rem;flex-wrap:wrap;align-items:flex-end;">
@@ -483,7 +511,7 @@ function renderApp(){
 
 function renderNav(){
   const tabs=isManager()
-    ?[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane']]
+    ?[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['archivio','Archivio'],['managers','Manager']]
     :[['turni','Turni'],['giornaliero','Giornaliero']];
   document.getElementById('main-nav').innerHTML=tabs.map(([id,label],i)=>`
     <button class="nav-btn ${i===0?'active':''}" onclick="goTab('${id}')">${label}</button>`).join('');
@@ -498,7 +526,10 @@ function renderLogin(){
       </div>
       <div class="login-card">
         <h3>Accesso manager</h3>
-        <input type="password" id="pwd-input" placeholder="Password manager" onkeydown="if(event.key==='Enter')doLogin()">
+        <select id="manager-select" style="padding:8px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:13px;width:100%;font-family:inherit;">
+          <option value="">— Seleziona manager —</option>
+        </select>
+        <input type="password" id="pwd-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
         <p class="err" id="pwd-err" style="display:none;">Password errata.</p>
         <button class="btn primary" onclick="doLogin()">Accedi come manager</button>
         <div class="login-or">oppure</div>
@@ -509,7 +540,22 @@ function renderLogin(){
       </div>
     </div>`;
 }
-function doLogin(){const pwd=document.getElementById('pwd-input').value;if(pwd===G.managerPwd){role='manager';renderApp();}else{document.getElementById('pwd-err').style.display='block';}}
+function doLogin(){
+  const sel=document.getElementById('manager-select');
+  const managerId=sel?sel.value:'';
+  const pwd=document.getElementById('pwd-input').value;
+  // Try named manager accounts first
+  if(managerId){
+    const mgr=G.managers.find(m=>m.id===managerId);
+    if(mgr&&mgr.password===pwd){
+      role='manager';currentManager=mgr;renderApp();return;
+    }
+    document.getElementById('pwd-err').style.display='block';return;
+  }
+  // Fallback: legacy single password
+  if(pwd===G.managerPwd){role='manager';currentManager={id:'admin',name:'Manager'};renderApp();}
+  else{document.getElementById('pwd-err').style.display='block';}
+}
 function doLoginDep(){
   const code=document.getElementById('dep-code-input').value.trim();
   if(!code){document.getElementById('dep-err').style.display='block';return;}
@@ -517,7 +563,7 @@ function doLoginDep(){
   if(!p){document.getElementById('dep-err').style.display='block';return;}
   role='dipendente';renderApp();
 }
-function logout(){role='';renderLogin();}
+function logout(){role='';currentManager=null;renderLogin();}
 async function changePwd(){const p=document.getElementById('new-pwd').value.trim();if(!p){alert('Inserisci una password.');return;}G.managerPwd=p;await dbSaveConfig('managerPwd',p);alert('Password aggiornata!');}
 
 function goTab(t){
@@ -536,6 +582,8 @@ function goTab(t){
   if(t==='legenda')renderLegenda();
   if(t==='config')renderConfig();
   if(t==='settimane')renderWeekList();
+  if(t==='archivio')renderArchive();
+  if(t==='managers')renderManagers();
 }
 
 function renderLegSidebar(filter){
@@ -1721,16 +1769,35 @@ function markClean(){
   const btn=document.getElementById('save-btn');
   if(btn){btn.style.background='var(--green-bg)';btn.style.borderColor='var(--green-border)';btn.style.color='var(--green-text)';btn.textContent='💾 Salva';}
 }
+async function saveVersionSnapshot(wk,note){
+  try{
+    const versionId='v'+Date.now()+Math.random().toString(36).slice(2,6);
+    await sb.from('week_versions').insert({
+      id:versionId,
+      week_id:wk.id,
+      saved_by:currentManager?currentManager.name:'sconosciuto',
+      saved_at:new Date().toISOString(),
+      shift_assign:wk.shift_assign,
+      role_assign:wk.role_assign,
+      note:note||''
+    });
+    console.log('Version snapshot saved:', versionId);
+  }catch(e){console.error('Error saving version:',e);}
+}
+
 async function saveAll(){
   const wk=curWeek();if(!wk)return;
   const btn=document.getElementById('save-btn');
   if(btn){btn.textContent='⏳ Salvataggio...';btn.disabled=true;}
   try{
+    // Save version snapshot before overwriting
+    await saveVersionSnapshot(wk);
     await dbSaveWeek(wk);
     markClean();
     if(btn){btn.textContent='✓ Salvato!';}
     setTimeout(()=>{if(btn){btn.textContent='💾 Salva';btn.disabled=false;}},1500);
   }catch(e){
+    console.error('saveAll error:',e);
     if(btn){btn.textContent='❌ Errore — riprova';btn.disabled=false;}
     setTimeout(()=>{if(btn){btn.textContent='💾 Salva *';btn.disabled=false;}},2000);
   }
@@ -1753,9 +1820,129 @@ window.addEventListener('beforeunload',e=>{
   if(isDirty){e.preventDefault();e.returnValue='Hai modifiche non salvate. Continuare?';}
 });
 
+
+// ===== ARCHIVIO VERSIONI =====
+async function renderArchive(){
+  const el=document.getElementById('archive-list');
+  const sel=document.getElementById('archive-week-sel');
+  if(!sel)return;
+  // Populate week selector
+  sel.innerHTML=G.weeks.map(w=>`<option value="${w.id}"${w.id===G.currentWeekId?' selected':''}>${w.name}</option>`).join('');
+  await loadArchive();
+}
+async function loadArchive(){
+  const sel=document.getElementById('archive-week-sel');
+  const el=document.getElementById('archive-list');
+  if(!sel||!el)return;
+  const weekId=sel.value;
+  if(!weekId){el.innerHTML='';return;}
+  el.innerHTML='<p style="font-size:12px;color:var(--text2);">Caricamento...</p>';
+  try{
+    const {data:versions}=await sb.from('week_versions')
+      .select('*')
+      .eq('week_id',weekId)
+      .order('saved_at',{ascending:false})
+      .limit(50);
+    if(!versions||!versions.length){
+      el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessuna versione salvata per questa settimana.</p>';
+      return;
+    }
+    el.innerHTML=versions.map(v=>{
+      const dt=new Date(v.saved_at).toLocaleString('it-IT');
+      const dayCount=v.shift_assign?Object.keys(v.shift_assign).length:0;
+      return`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:6px;flex-wrap:wrap;">
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:500;">${dt}</div>
+          <div style="font-size:11px;color:var(--text2);">Salvato da: <b>${v.saved_by||'sconosciuto'}</b> • ${dayCount} giorni${v.note?' • '+v.note:''}</div>
+        </div>
+        <button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="previewVersion('${v.id}')">👁 Anteprima</button>
+        <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="restoreVersion('${v.id}','${dt}')">↩ Ripristina</button>
+      </div>`;
+    }).join('');
+  }catch(e){el.innerHTML='<p style="color:var(--red-text);">Errore caricamento versioni.</p>';}
+}
+async function previewVersion(versionId){
+  const {data:v}=await sb.from('week_versions').select('*').eq('id',versionId).single();
+  if(!v)return;
+  const dt=new Date(v.saved_at).toLocaleString('it-IT');
+  const wk=G.weeks.find(w=>w.id===v.week_id);
+  const wkName=wk?wk.name:v.week_id;
+  // Show a summary of the shifts
+  let summary='';
+  if(v.shift_assign){
+    const days=['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
+    Object.entries(v.shift_assign).forEach(([di,assigns])=>{
+      const dayAssigns=Object.entries(assigns).filter(([k,val])=>val&&val!=='').map(([k,val])=>{
+        const pid=k.replace('_P','').replace('_C','');
+        const name=G.staff.find(s=>s.id===pid)?.name||pid;
+        return name+': '+val;
+      }).join(', ');
+      if(dayAssigns)summary+=`${days[di]}: ${dayAssigns}\n`;
+    });
+  }
+  alert(`Versione del ${dt}\nSettimana: ${wkName}\nSalvato da: ${v.saved_by||'sconosciuto'}\n\n${summary}`);
+}
+async function restoreVersion(versionId,dateStr){
+  if(!confirm(`Ripristinare la versione del ${dateStr}?\nI turni attuali verranno sovrascritti.`))return;
+  const {data:v}=await sb.from('week_versions').select('*').eq('id',versionId).single();
+  if(!v)return;
+  const wk=G.weeks.find(w=>w.id===v.week_id);
+  if(!wk){alert('Settimana non trovata.');return;}
+  // Save current as version before restoring
+  await saveVersionSnapshot(wk,'Prima del ripristino');
+  wk.shift_assign=v.shift_assign||{};
+  wk.role_assign=v.role_assign||{};
+  await dbSaveWeek(wk);
+  if(wk.id===G.currentWeekId)renderTurni();
+  alert('Versione ripristinata!');
+  loadArchive();
+}
+
+// ===== GESTIONE MANAGER =====
+function renderManagers(){
+  const el=document.getElementById('managers-list');if(!el)return;
+  if(!G.managers.length){el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessun manager.</p>';return;}
+  el.innerHTML=G.managers.map(m=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:6px;flex-wrap:wrap;">
+      <span style="font-weight:500;flex:1;">${m.name}</span>
+      <input type="password" placeholder="Nuova password" id="pwd-${m.id}"
+        style="width:160px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-size:12px;font-family:inherit;">
+      <button class="btn primary" style="font-size:11px;padding:4px 10px;" onclick="changeManagerPwd('${m.id}')">Cambia password</button>
+      ${m.id!==currentManager?.id?`<button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="deleteManager('${m.id}','${m.name}')">Rimuovi</button>`:'<span style="font-size:11px;color:var(--blue-text);">(tu)</span>'}
+    </div>`).join('');
+}
+async function changeManagerPwd(mid){
+  const inp=document.getElementById('pwd-'+mid);
+  if(!inp||!inp.value.trim()){alert('Inserisci una password.');return;}
+  const newPwd=inp.value.trim();
+  await sb.from('managers').update({password:newPwd}).eq('id',mid);
+  const m=G.managers.find(m=>m.id===mid);if(m)m.password=newPwd;
+  inp.value='';
+  alert('Password aggiornata!');
+}
+async function addManager(){
+  const nameEl=document.getElementById('new-mgr-name');
+  const pwdEl=document.getElementById('new-mgr-pwd');
+  if(!nameEl.value.trim()||!pwdEl.value.trim()){alert('Inserisci nome e password.');return;}
+  const newMgr={id:'m'+Date.now(),name:nameEl.value.trim(),password:pwdEl.value.trim()};
+  await sb.from('managers').insert(newMgr);
+  G.managers.push(newMgr);
+  nameEl.value='';pwdEl.value='';
+  renderManagers();
+  alert('Manager aggiunto!');
+}
+async function deleteManager(mid,name){
+  if(!confirm(`Rimuovere il manager "${name}"?`))return;
+  await sb.from('managers').delete().eq('id',mid);
+  G.managers=G.managers.filter(m=>m.id!==mid);
+  renderManagers();
+}
+
+
+
 function renderAll(){
   renderWeekSelector();renderDepWeekSelector();renderLegSidebar();renderTurni();renderDayNav();
-  if(isManager()){renderStaff();renderLegenda();renderConfig();renderFabbisogno();renderEquivalenze();renderRegole();renderRoleRules();renderPosRules();}
+  if(isManager()){renderStaff();renderLegenda();renderConfig();renderFabbisogno();renderEquivalenze();renderRegole();renderRoleRules();renderPosRules();renderManagers();}
   showDraftPanel();
 }
 
@@ -1765,6 +1952,7 @@ async function init(){
   document.getElementById('app').style.display='block';
   if(!ok){document.getElementById('app').innerHTML='<div style="padding:2rem;text-align:center;"><p style="font-size:16px;font-weight:500;color:var(--red-text);">Errore di connessione.</p></div>';return;}
   renderLogin();
+  renderLoginManagers();
 }
 init();
 </script>
