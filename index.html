@@ -285,6 +285,17 @@ function weekToDb(w){
 }
 async function dbSaveWeek(w){
   try{
+    // Check for conflicts: if server has a newer version, warn before overwriting
+    const {data:serverData}=await sb.from('weeks').select('last_saved').eq('id',w.id).single();
+    if(serverData&&serverData.last_saved&&w.last_saved){
+      const serverTime=new Date(serverData.last_saved).getTime();
+      const localTime=new Date(w.last_saved).getTime();
+      if(serverTime>localTime+5000){// server is more than 5 seconds newer
+        const serverTimeStr=new Date(serverData.last_saved).toLocaleString('it-IT');
+        const ok=confirm(`⚠️ Attenzione: qualcun altro ha salvato questa settimana alle ${serverTimeStr}.\n\nSe continui sovrascriverai le loro modifiche.\n\nVuoi sovrascrivere?`);
+        if(!ok){setSyncStatus('err');return;}
+      }
+    }
     const data=weekToDb(w);
     const ts=data.last_saved;
     console.log('Saving week:', w.id, 'at', ts, 'shift_assign days:', Object.keys(data.shift_assign).length);
@@ -294,7 +305,6 @@ async function dbSaveWeek(w){
       setSyncStatus('err');
     } else {
       console.log('Week saved OK at', ts);
-      // Update last_saved in memory too
       w.last_saved=ts;
       setSyncStatus('ok');
     }
@@ -349,7 +359,8 @@ function renderApp(){
         <button class="btn primary" style="font-size:11px;padding:4px 10px;" onclick="goTab('settimane')">Settimane</button>`
       :`<select class="week-selector" id="week-selector-dep" onchange="switchWeekDep(this.value)" style="max-width:220px;"></select>`}
       <span id="sync-status" class="sync-status ${syncStatus==='ok'?'ok':'err'}">${syncStatus==='ok'?'● Sincronizzato':'● ...'}</span>
-      ${isManager()?`<button class="btn success" id="save-btn" style="font-size:12px;padding:5px 16px;font-weight:600;" onclick="saveAll()">💾 Salva</button>`:''}
+      ${isManager()?`<button class="btn success" id="save-btn" style="font-size:12px;padding:5px 16px;font-weight:600;" onclick="saveAll()">💾 Salva</button>
+        <button class="btn" id="reload-btn" title="Ricarica dati dal server" style="font-size:12px;padding:5px 10px;" onclick="reloadFromServer()">🔄</button>`:''}
       <button class="btn" style="font-size:11px;padding:4px 10px;margin-left:auto;" onclick="logout()">Esci</button>
     </div>
     <nav id="main-nav"></nav>
@@ -857,7 +868,7 @@ function renderDayNav(){
     <button class="day-btn ${d.tipo==='pranzo_cena'?'pc':''} ${d.idx===wk.selected_day?'active':''}" onclick="selDay(${d.idx})">${d.name}</button>`).join('');
   renderDayContent();
 }
-async function selDay(i){const wk=isManager()?curWeek():getDepWeek();if(!wk)return;wk.selected_day=i;if(isManager())await dbSaveWeek(wk);renderDayNav();}
+async function selDay(i){const wk=isManager()?curWeek():getDepWeek();if(!wk)return;wk.selected_day=i;renderDayNav();}
 
 function renderDayContent(){
   const wk=isManager()?curWeek():getDepWeek();if(!wk)return;
@@ -1717,13 +1728,24 @@ async function saveAll(){
   try{
     await dbSaveWeek(wk);
     markClean();
-    // Brief green flash
     if(btn){btn.textContent='✓ Salvato!';}
     setTimeout(()=>{if(btn){btn.textContent='💾 Salva';btn.disabled=false;}},1500);
   }catch(e){
     if(btn){btn.textContent='❌ Errore — riprova';btn.disabled=false;}
     setTimeout(()=>{if(btn){btn.textContent='💾 Salva *';btn.disabled=false;}},2000);
   }
+}
+async function reloadFromServer(){
+  if(isDirty){
+    if(!confirm('Hai modifiche non salvate. Ricaricare dal server le perderà. Continuare?'))return;
+  }
+  const btn=document.getElementById('reload-btn');
+  if(btn){btn.textContent='⏳';btn.disabled=true;}
+  await dbLoad();
+  renderAll();
+  markClean();
+  if(btn){btn.textContent='🔄';btn.disabled=false;}
+  alert('Dati ricaricati dal server!');
 }
 
 // Warn before leaving with unsaved changes
