@@ -539,6 +539,12 @@ function renderLogin(){
         <button class="btn" onclick="doLoginDep()">Accedi come dipendente</button>
       </div>
     </div>`;
+  // Populate manager select now that DOM exists
+  const sel=document.getElementById('manager-select');
+  if(sel&&G.managers.length){
+    sel.innerHTML='<option value="">— Seleziona manager —</option>'+
+      G.managers.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+  }
 }
 function doLogin(){
   const sel=document.getElementById('manager-select');
