@@ -248,7 +248,7 @@ async function dbLoad(){
       if(r.key==='posRules')try{G.posRules=JSON.parse(r.value);}catch(e){}
     });}
     const {data:staff}=await sb.from('staff').select('*');
-    G.staff=(staff||[]).map(s=>({...s,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{}}));
+    G.staff=(staff||[]).map(s=>({...s,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);
     const {data:shifts}=await sb.from('shifts').select('*');
     if(shifts&&shifts.length>0){G.shifts=shifts.map(s=>({...s,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[]}));}
     else{G.shifts=JSON.parse(JSON.stringify(DEF_SHIFTS));await dbSaveShifts();}
@@ -328,7 +328,7 @@ async function dbSaveShifts(){
 async function dbSaveStaff(){
   try{
     if(G.staff.length){
-      const rows=G.staff.map(s=>({id:s.id,name:s.name,role:s.role,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{}}));
+      const rows=G.staff.map((s,i)=>({id:s.id,name:s.name,role:s.role,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:i}));
       // Upsert: update if exists, insert if not — never deletes
       await sb.from('staff').upsert(rows,{onConflict:'id'});
       // Remove staff that no longer exist
