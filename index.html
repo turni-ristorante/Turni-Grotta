@@ -1799,13 +1799,19 @@ async function saveVersionSnapshot(wk,note){
 }
 
 async function saveAll(){
-  const wk=curWeek();if(!wk)return;
+  // Always save the week currently shown in the selector — not curWeek() which could be stale
+  const sel=document.getElementById('week-selector');
+  const wkId=sel?sel.value:G.currentWeekId;
+  const wk=G.weeks.find(w=>w.id===wkId);
+  if(!wk){alert('Nessuna settimana selezionata.');return;}
+  // Double-check: confirm which week we're saving
+  console.log('Saving week from selector:', wk.id, wk.name);
   const btn=document.getElementById('save-btn');
   if(btn){btn.textContent='⏳ Salvataggio...';btn.disabled=true;}
   try{
-    // Save version snapshot before overwriting
     await saveVersionSnapshot(wk);
     await dbSaveWeek(wk);
+    G.currentWeekId=wk.id;
     markClean();
     if(btn){btn.textContent='✓ Salvato!';}
     setTimeout(()=>{if(btn){btn.textContent='💾 Salva';btn.disabled=false;}},1500);
@@ -1839,8 +1845,18 @@ async function renderArchive(){
   const el=document.getElementById('archive-list');
   const sel=document.getElementById('archive-week-sel');
   if(!sel)return;
-  // Populate week selector
-  sel.innerHTML=G.weeks.map(w=>`<option value="${w.id}"${w.id===G.currentWeekId?' selected':''}>${w.name}</option>`).join('');
+  // Populate week selector — include also weeks that only exist in versions
+  const {data:versionWeekIds}=await sb.from('week_versions').select('week_id').order('saved_at',{ascending:false});
+  const usedIds=[...new Set((versionWeekIds||[]).map(v=>v.week_id))];
+  // Build options: current weeks + orphaned IDs
+  let opts=G.weeks.map(w=>`<option value="${w.id}"${w.id===G.currentWeekId?' selected':''}>${w.name}</option>`).join('');
+  // Add orphaned week_ids that don't match any current week
+  usedIds.forEach(id=>{
+    if(!G.weeks.find(w=>w.id===id)){
+      opts+=`<option value="${id}">[Settimana eliminata: ${id.slice(0,16)}...]</option>`;
+    }
+  });
+  sel.innerHTML=opts;
   await loadArchive();
 }
 async function loadArchive(){
