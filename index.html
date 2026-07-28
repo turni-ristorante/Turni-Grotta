@@ -1960,6 +1960,14 @@ function renderAll(){
   showDraftPanel();
 }
 
+function renderLoginManagers(){
+  const sel=document.getElementById('manager-select');if(!sel)return;
+  if(G.managers&&G.managers.length){
+    sel.innerHTML='<option value="">— Seleziona manager —</option>'+
+      G.managers.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
+  }
+}
+
 async function init(){
   const ok=await dbLoad();
   document.getElementById('loading-screen').style.display='none';
