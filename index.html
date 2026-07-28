@@ -301,13 +301,15 @@ async function dbSaveWeek(w){
     }
     const data=weekToDb(w);
     const ts=data.last_saved;
-    console.log('Saving week:', w.id, 'at', ts, 'shift_assign days:', Object.keys(data.shift_assign).length);
+    const roleCount=Object.keys(data.role_assign||{}).filter(k=>data.role_assign[k]).length;
+    const shiftDays=Object.keys(data.shift_assign||{}).length;
+    console.log('Saving week:', w.id, '| giorni turni:', shiftDays, '| ruoli:', roleCount, '| by:', data.last_saved_by);
     const {error}=await sb.from('weeks').upsert(data);
     if(error){
       console.error('dbSaveWeek error:',error);
       setSyncStatus('err');
     } else {
-      console.log('Week saved OK at', ts);
+      console.log('Week saved OK — turni:', shiftDays, 'ruoli:', roleCount);
       w.last_saved=ts;
       setSyncStatus('ok');
     }
@@ -389,6 +391,11 @@ function renderApp(){
     </div>
     <div id="sec-giornaliero" class="sec">
       <div class="day-nav" id="day-nav"></div>
+      ${isManager()?`<div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
+        <button class="btn primary" style="font-size:11px;padding:4px 12px;" onclick="autoFillRoles()">&#10022; Compila ruoli automaticamente</button>
+        <button class="btn success" style="font-size:11px;padding:4px 12px;font-weight:600;" onclick="saveAll()">&#128190; Salva ruoli</button>
+        <span id="incomplete-alert" style="font-size:12px;color:var(--red-text);align-self:center;display:none;"></span>
+      </div>`:''}
       <div class="main-with-sidebar">
         <div class="main-content"><div id="day-content"></div></div>
         <div class="leg-sidebar"><h4>Legenda</h4><div id="leg-sidebar-giorno"></div></div>
@@ -1856,10 +1863,11 @@ async function loadArchive(){
     el.innerHTML=versions.map(v=>{
       const dt=new Date(v.saved_at).toLocaleString('it-IT');
       const dayCount=v.shift_assign?Object.keys(v.shift_assign).length:0;
+      const roleCount=v.role_assign?Object.keys(v.role_assign).filter(k=>v.role_assign[k]).length:0;
       return`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:6px;flex-wrap:wrap;">
         <div style="flex:1;">
           <div style="font-size:13px;font-weight:500;">${dt}</div>
-          <div style="font-size:11px;color:var(--text2);">Salvato da: <b>${v.saved_by||'sconosciuto'}</b> • ${dayCount} giorni${v.note?' • '+v.note:''}</div>
+          <div style="font-size:11px;color:var(--text2);">Salvato da: <b>${v.saved_by||'sconosciuto'}</b> • ${dayCount} giorni • ${roleCount} ruoli${v.note?' • '+v.note:''}</div>
         </div>
         <button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="previewVersion('${v.id}')">👁 Anteprima</button>
         <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="restoreVersion('${v.id}','${dt}')">↩ Ripristina</button>
