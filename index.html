@@ -138,8 +138,30 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .pref-role-item{display:flex;flex-direction:column;gap:3px;}
 .pref-role-item label{font-size:11px;color:var(--text2);}
 .btn.purple{background:#f3e8ff;color:#7e22ce;border-color:#c4b5fd;}
+
+/* Compare panel */
+.compare-panel{position:fixed;top:0;right:-600px;width:580px;height:100vh;background:#fff;border-left:2px solid var(--blue-border);box-shadow:-4px 0 20px rgba(0,0,0,0.15);z-index:500;transition:right 0.3s ease;display:flex;flex-direction:column;}
+.compare-panel.open{right:0;}
+.compare-header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--blue-bg);border-bottom:0.5px solid var(--blue-border);flex-shrink:0;}
+.compare-header h3{font-size:13px;font-weight:500;color:var(--blue-text);flex:1;}
+.compare-body{flex:1;overflow:auto;padding:12px;}
+.compare-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.2);z-index:499;display:none;}
+.compare-overlay.open{display:block;}
 </style>
 </head><body>
+<!-- Compare panel overlay -->
+<div class="compare-overlay" id="compare-overlay" onclick="closeCompare()"></div>
+<!-- Compare panel -->
+<div class="compare-panel" id="compare-panel">
+  <div class="compare-header">
+    <h3>👁 Confronto settimana</h3>
+    <select id="compare-week-sel" onchange="loadCompare()" style="font-size:12px;padding:4px 8px;border-radius:var(--radius);border:0.5px solid var(--blue-border);background:#fff;font-family:inherit;max-width:200px;"></select>
+    <button onclick="closeCompare()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--blue-text);padding:0 4px;">×</button>
+  </div>
+  <div class="compare-body" id="compare-body">
+    <p style="color:var(--text3);font-size:12px;">Seleziona una settimana per confrontare.</p>
+  </div>
+</div>
 <div id="loading-screen"><div class="spinner"></div><p style="font-size:14px;color:#555;">Connessione al database...</p></div>
 <div class="app" id="app" style="display:none;"></div>
 <script>
@@ -378,7 +400,8 @@ function renderApp(){
         <span class="color-legend-item"><span class="color-dot" style="background:#c026d3;"></span>A</span>
         <span class="color-legend-item"><span class="color-dot" style="background:#dc2626;"></span>E</span>
         <span class="color-legend-item"><span class="color-dot" style="background:#111;"></span>OFF/FERIE</span>
-        ${isManager()?`<button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>
+        ${isManager()?`<button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openCompare()">&#128065; Confronta</button>
+          <button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>
         <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="doUndo()" title="Annulla ultima modifica">↩ Annulla</button>
         <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="clearWeek()" title="Svuota tutti i turni della settimana">🗑 Pulisci settimana</button>`:''}
       </div>
@@ -1969,6 +1992,87 @@ async function deleteManager(mid,name){
 }
 
 
+
+// ===== CONFRONTO SETTIMANA =====
+function openCompare(){
+  const panel=document.getElementById('compare-panel');
+  const overlay=document.getElementById('compare-overlay');
+  const sel=document.getElementById('compare-week-sel');
+  if(!panel)return;
+  // Populate selector with all weeks except current
+  const wk=curWeek();
+  sel.innerHTML=G.weeks
+    .filter(w=>w.id!==wk?.id)
+    .map(w=>`<option value="${w.id}">${w.name}</option>`)
+    .join('');
+  panel.classList.add('open');
+  overlay.classList.add('open');
+  loadCompare();
+}
+function closeCompare(){
+  document.getElementById('compare-panel')?.classList.remove('open');
+  document.getElementById('compare-overlay')?.classList.remove('open');
+}
+function loadCompare(){
+  const sel=document.getElementById('compare-week-sel');
+  const body=document.getElementById('compare-body');
+  if(!sel||!body)return;
+  const wkId=sel.value;
+  const wk=G.weeks.find(w=>w.id===wkId);
+  if(!wk){body.innerHTML='<p style="color:var(--text3);font-size:12px;">Settimana non trovata.</p>';return;}
+  const days=DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:wk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
+  const weekDates=getWeekDates(wk);
+  // Build read-only grid
+  let cols=[];
+  days.forEach(d=>{
+    const dateStr=weekDates?weekDates[d.idx].getDate():'';
+    const label=dateStr?`${d.name} ${dateStr}`:d.name;
+    if(d.tipo==='pranzo_cena'){
+      cols.push({...d,label,servizio:'pranzo',colLabel:'P'});
+      cols.push({...d,label,servizio:'cena',colLabel:'C'});
+    } else {
+      cols.push({...d,label,servizio:null,colLabel:null});
+    }
+  });
+  let h=`<p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;">${wk.name}</p>`;
+  h+='<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:11px;width:100%;">';
+  h+='<thead><tr><th style="text-align:left;padding:3px 6px;background:var(--bg3);border:0.5px solid var(--border);min-width:80px;position:sticky;left:0;">Staff</th>';
+  // Day headers
+  let lastDi=-1;
+  cols.forEach(c=>{
+    if(c.idx===lastDi)return;lastDi=c.idx;
+    const span=c.tipo==='pranzo_cena'?2:1;
+    const bg=c.tipo==='pranzo_cena'?'#fff8dd':'var(--bg3)';
+    const col=c.tipo==='pranzo_cena'?'#7a5c00':'var(--text)';
+    h+=`<th colspan="${span}" style="background:${bg};color:${col};padding:3px 5px;border:0.5px solid var(--border);white-space:nowrap;font-size:10px;">${c.label}</th>`;
+  });
+  h+='</tr>';
+  if(cols.some(c=>c.colLabel)){
+    h+='<tr><th style="background:var(--bg3);border:0.5px solid var(--border);"></th>';
+    cols.forEach(c=>{
+      if(c.tipo==='pranzo_cena'){
+        const bg=c.servizio==='pranzo'?'#fff8dd':'#ddeeff';
+        const col=c.servizio==='pranzo'?'#7a5c00':'#0a3d6e';
+        h+=`<th style="background:${bg};color:${col};font-size:9px;padding:2px 4px;border:0.5px solid var(--border);">${c.colLabel}</th>`;
+      } else {
+        h+='<th style="background:var(--bg3);border:0.5px solid var(--border);"></th>';
+      }
+    });
+    h+='</tr>';
+  }
+  h+='</thead><tbody>';
+  G.staff.forEach(p=>{
+    h+=`<tr><td style="text-align:left;padding:3px 6px;border:0.5px solid var(--border);background:#fff;position:sticky;left:0;font-size:11px;white-space:nowrap;">${p.name}</td>`;
+    cols.forEach(c=>{
+      const val=getShiftCode(wk,c.idx,p.id,c.servizio);
+      const cs=val?shiftColorStyle(val):'';
+      h+=`<td style="padding:3px 5px;border:0.5px solid var(--border);text-align:center;font-size:10px;font-weight:${val?'600':'400'};${cs}">${val||''}</td>`;
+    });
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  body.innerHTML=h;
+}
 
 function renderAll(){
   renderWeekSelector();renderDepWeekSelector();renderLegSidebar();renderTurni();renderDayNav();
