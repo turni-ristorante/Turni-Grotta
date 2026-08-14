@@ -2181,41 +2181,6 @@ function exportPDF(){
   setTimeout(function(){win.print();},600);
 }
 
-// ===== PRESENZA ONLINE =====
-let presenceInterval=null;
-async function setOnline(){
-  if(!currentManager||!isManager())return;
-  try{await sb.from('config').upsert({key:'online_'+currentManager.id,value:JSON.stringify({name:currentManager.name,at:new Date().toISOString()})});}catch(e){}
-}
-async function setOffline(){
-  if(!currentManager||!isManager())return;
-  try{await sb.from('config').delete().eq('key','online_'+currentManager.id);}catch(e){}
-}
-async function updateOnlineBadge(){
-  if(!isManager())return;
-  try{
-    const {data}=await sb.from('config').select('key,value').like('key','online_%');
-    if(!data||!data.length){const el=document.getElementById('online-badge');if(el)el.innerHTML='';return;}
-    const now=Date.now();
-    const online=data.map(r=>{try{const v=JSON.parse(r.value);return{name:v.name,at:new Date(v.at).getTime()};}catch(e){return null;}}).filter(v=>v&&now-v.at<120000);
-    const el=document.getElementById('online-badge');
-    if(el){
-      const others=online.filter(v=>v.name!==currentManager?.name).map(v=>v.name);
-      el.innerHTML=others.length?'<span style="background:var(--orange-bg);color:var(--orange-text);border:0.5px solid var(--orange-border);padding:2px 8px;border-radius:20px;font-size:10px;">&#128100; Online: '+others.join(', ')+'</span>':'';
-    }
-  }catch(e){}
-}
-function startPresence(){
-  if(presenceInterval)clearInterval(presenceInterval);
-  setOnline();
-  presenceInterval=setInterval(function(){setOnline();updateOnlineBadge();},30000);
-  updateOnlineBadge();
-}
-function stopPresence(){
-  if(presenceInterval){clearInterval(presenceInterval);presenceInterval=null;}
-  setOffline();
-}
-
 // ===== CONFRONTO SETTIMANA =====
 function openCompare(){
   const panel=document.getElementById('compare-panel');
