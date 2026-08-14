@@ -272,7 +272,7 @@ async function dbLoad(){
     const {data:staff}=await sb.from('staff').select('*');
     G.staff=(staff||[]).map(s=>({...s,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);
     const {data:shifts}=await sb.from('shifts').select('*');
-    if(shifts&&shifts.length>0){G.shifts=shifts.map(s=>({...s,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[]}));}
+    if(shifts&&shifts.length>0){G.shifts=shifts.map(s=>({...s,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[],sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);}
     else{G.shifts=JSON.parse(JSON.stringify(DEF_SHIFTS));await dbSaveShifts();}
     const {data:weeks}=await sb.from('weeks').select('*');
     G.weeks=(weeks||[]).map(w=>({...w,day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||'',draft_assign:w.draft_assign||null,draft_role_assign:w.draft_role_assign||null,last_saved:w.last_saved||null}));
@@ -340,7 +340,8 @@ async function dbSaveWeek(w){
 async function dbSaveShifts(){
   try{
     if(G.shifts.length){
-      await sb.from('shifts').upsert(G.shifts,{onConflict:'code'});
+      const shiftsWithOrder=G.shifts.map((s,i)=>({...s,sort_order:i}));
+      await sb.from('shifts').upsert(shiftsWithOrder,{onConflict:'code'});
       const codes=G.shifts.map(s=>s.code);
       await sb.from('shifts').delete().not('code','in',`(${codes.map(c=>`"${c}"`).join(',')})`);
     } else {
@@ -388,6 +389,7 @@ function renderApp(){
       <span id="sync-status" class="sync-status ${syncStatus==='ok'?'ok':'err'}">${syncStatus==='ok'?'● Sincronizzato':'● ...'}</span>
       ${isManager()?`<button class="btn success" id="save-btn" style="font-size:12px;padding:5px 16px;font-weight:600;" onclick="saveAll()">💾 Salva</button>
         <button class="btn" id="reload-btn" title="Ricarica dati dal server" style="font-size:12px;padding:5px 10px;" onclick="reloadFromServer()">🔄</button>`:''}
+      <span id="online-badge" style="font-size:11px;color:var(--text2);"></span>
       <button class="btn" style="font-size:11px;padding:4px 10px;margin-left:auto;" onclick="logout()">Esci</button>
     </div>
     <nav id="main-nav"></nav>
@@ -400,7 +402,8 @@ function renderApp(){
         <span class="color-legend-item"><span class="color-dot" style="background:#c026d3;"></span>A</span>
         <span class="color-legend-item"><span class="color-dot" style="background:#dc2626;"></span>E</span>
         <span class="color-legend-item"><span class="color-dot" style="background:#111;"></span>OFF/FERIE</span>
-        ${isManager()?`<button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openCompare()">&#128065; Confronta</button>
+        ${isManager()?`<button class="btn" style="font-size:11px;padding:4px 10px;" onclick="exportPDF()">&#128196; Esporta PDF</button>
+          <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openCompare()">&#128065; Confronta</button>
           <button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>
         <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="doUndo()" title="Annulla ultima modifica">↩ Annulla</button>
         <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="clearWeek()" title="Svuota tutti i turni della settimana">🗑 Pulisci settimana</button>`:''}
@@ -584,12 +587,12 @@ function doLogin(){
   if(managerId){
     const mgr=G.managers.find(m=>m.id===managerId);
     if(mgr&&mgr.password===pwd){
-      role='manager';currentManager=mgr;renderApp();return;
+      role='manager';currentManager=mgr;renderApp();startPresence();return;
     }
     document.getElementById('pwd-err').style.display='block';return;
   }
   // Fallback: legacy single password
-  if(pwd===G.managerPwd){role='manager';currentManager={id:'admin',name:'Manager'};renderApp();}
+  if(pwd===G.managerPwd){role='manager';currentManager={id:'admin',name:'Manager'};renderApp();startPresence();}
   else{document.getElementById('pwd-err').style.display='block';}
 }
 function doLoginDep(){
@@ -599,7 +602,7 @@ function doLoginDep(){
   if(!p){document.getElementById('dep-err').style.display='block';return;}
   role='dipendente';renderApp();
 }
-function logout(){role='';currentManager=null;renderLogin();}
+function logout(){stopPresence();role='';currentManager=null;renderLogin();}
 async function changePwd(){const p=document.getElementById('new-pwd').value.trim();if(!p){alert('Inserisci una password.');return;}G.managerPwd=p;await dbSaveConfig('managerPwd',p);alert('Password aggiornata!');}
 
 function goTab(t){
@@ -647,7 +650,12 @@ function renderLegSidebar(filter){
 function renderWeekSelector(){
   if(!isManager())return;
   const sel=document.getElementById('week-selector');if(!sel)return;
-  sel.innerHTML=G.weeks.map(w=>`<option value="${w.id}"${w.id===G.currentWeekId?' selected':''}>${w.name}${w.published?' ✓':''}</option>`).join('');
+  const sorted=[...G.weeks].sort((a,b)=>{
+    if(a.startDate&&b.startDate)return b.startDate.localeCompare(a.startDate);
+    if(a.startDate)return -1;if(b.startDate)return 1;
+    return 0;
+  });
+  sel.innerHTML=sorted.map(w=>`<option value="${w.id}"${w.id===G.currentWeekId?' selected':''}>${w.name}${w.published?' ✓':''}</option>`).join('');
 }
 function renderDepWeekSelector(){
   if(isManager())return;
@@ -1541,7 +1549,14 @@ function toggleFascia(i,fid,on){const s=G.shifts[i];if(!s.fasce)s.fasce=[];if(on
 function toggleCompatRole(i,role,on){const s=G.shifts[i];if(!s.compatibleRoles)s.compatibleRoles=[];if(on){if(!s.compatibleRoles.includes(role))s.compatibleRoles.push(role);}else{s.compatibleRoles=s.compatibleRoles.filter(r=>r!==role);}renderLegenda();}
 async function saveShifts(){await dbSaveShifts();renderAll();alert('Legenda salvata!');}
 function remShift(i){G.shifts.splice(i,1);renderLegenda();}
-function addShift(){G.shifts.push({code:'NEW',s1:'',e1:'',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[]});renderLegenda();}
+function addShift(){
+  const newShift={code:'NEW',s1:'',e1:'',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[],compatibleRoles:[]};
+  // Insert alphabetically by code — find insertion point
+  const idx=G.shifts.findIndex(s=>!s.is_off&&!s.is_ferie&&s.code!=='MALATTIA'&&s.code>'NEW');
+  if(idx>=0)G.shifts.splice(idx,0,newShift);
+  else G.shifts.push(newShift);
+  renderLegenda();
+}
 
 // ===== CONFIG =====
 function renderConfig(){
@@ -1859,6 +1874,8 @@ async function reloadFromServer(){
 
 // Warn before leaving with unsaved changes
 window.addEventListener('beforeunload',e=>{
+  stopPresence();
+  stopPresence();
   if(isDirty){e.preventDefault();e.returnValue='Hai modifiche non salvate. Continuare?';}
 });
 
@@ -1919,21 +1936,86 @@ async function previewVersion(versionId){
   if(!v)return;
   const dt=new Date(v.saved_at).toLocaleString('it-IT');
   const wk=G.weeks.find(w=>w.id===v.week_id);
-  const wkName=wk?wk.name:v.week_id;
-  // Show a summary of the shifts
-  let summary='';
-  if(v.shift_assign){
-    const days=['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
-    Object.entries(v.shift_assign).forEach(([di,assigns])=>{
-      const dayAssigns=Object.entries(assigns).filter(([k,val])=>val&&val!=='').map(([k,val])=>{
-        const pid=k.replace('_P','').replace('_C','');
-        const name=G.staff.find(s=>s.id===pid)?.name||pid;
-        return name+': '+val;
-      }).join(', ');
-      if(dayAssigns)summary+=`${days[di]}: ${dayAssigns}\n`;
+  const wkName=wk?wk.name:('Settimana archiviata');
+  const dayConfig=wk?wk.day_config:['cena','cena','cena','cena','cena','cena','cena'];
+  const startDate=wk?wk.startDate:'';
+  const fakeWk={id:'__preview__',name:wkName,shift_assign:v.shift_assign||{},role_assign:v.role_assign||{},day_config:dayConfig,startDate:startDate};
+  const panel=document.getElementById('compare-panel');
+  const overlay=document.getElementById('compare-overlay');
+  const body=document.getElementById('compare-body');
+  const sel=document.getElementById('compare-week-sel');
+  if(!panel||!body)return;
+  panel.classList.add('open');overlay.classList.add('open');
+  const header=panel.querySelector('.compare-header h3');
+  if(header)header.textContent=`Anteprima: ${dt} (${v.saved_by||'sconosciuto'})`;
+  if(sel)sel.style.display='none';
+  const days=DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:fakeWk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
+  const weekDates=getWeekDates(fakeWk);
+  let cols=[];
+  days.forEach(d=>{
+    const dateStr=weekDates?weekDates[d.idx].getDate():'';
+    const label=dateStr?`${d.name} ${dateStr}`:d.name;
+    if(d.tipo==='pranzo_cena'){cols.push({...d,label,servizio:'pranzo',colLabel:'P'});cols.push({...d,label,servizio:'cena',colLabel:'C'});}
+    else cols.push({...d,label,servizio:null,colLabel:null});
+  });
+  let h=`<p style="font-size:11px;color:var(--text2);margin-bottom:8px;">${wkName}</p>`;
+  h+='<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:11px;width:100%;">';
+  h+='<thead><tr><th style="text-align:left;padding:3px 6px;background:var(--bg3);border:0.5px solid var(--border);min-width:80px;position:sticky;left:0;">Staff</th>';
+  let lastDi=-1;
+  cols.forEach(c=>{
+    if(c.idx===lastDi)return;lastDi=c.idx;
+    const span=c.tipo==='pranzo_cena'?2:1;
+    const bg=c.tipo==='pranzo_cena'?'#fff8dd':'var(--bg3)';
+    h+=`<th colspan="${span}" style="background:${bg};padding:3px 5px;border:0.5px solid var(--border);font-size:10px;white-space:nowrap;">${c.label}</th>`;
+  });
+  h+='</tr></thead><tbody>';
+  G.staff.forEach(p=>{
+    h+=`<tr><td style="text-align:left;padding:3px 6px;border:0.5px solid var(--border);background:#fff;position:sticky;left:0;font-size:11px;white-space:nowrap;">${p.name}</td>`;
+    cols.forEach(c=>{
+      const val=getShiftCode(fakeWk,c.idx,p.id,c.servizio);
+      const cs=val?shiftColorStyle(val):'';
+      h+=`<td style="padding:3px 5px;border:0.5px solid var(--border);text-align:center;font-size:10px;font-weight:${val?'600':'400'};${cs}">${val||''}</td>`;
     });
-  }
-  alert(`Versione del ${dt}\nSettimana: ${wkName}\nSalvato da: ${v.saved_by||'sconosciuto'}\n\n${summary}`);
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  // GIORNALIERO per ogni giorno
+  h+='<p style="font-size:11px;font-weight:500;color:var(--text2);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Giornaliero per fascia</p>';
+  days.forEach(d=>{
+    const tipo=d.tipo;
+    const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
+    const fasce=fasciaIdxs.map(i=>ALL_FASCE[i]);
+    const dateStr=weekDates?` ${weekDates[d.idx].getDate()}`:' ';
+    h+=`<p style="font-size:10px;font-weight:600;color:var(--text2);margin:8px 0 3px;">${d.name}${dateStr}</p>`;
+    h+='<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;width:100%;margin-bottom:8px;">';
+    h+='<thead><tr><th style="text-align:left;padding:2px 5px;background:var(--bg3);border:0.5px solid var(--border);min-width:70px;position:sticky;left:0;">Staff</th>';
+    fasce.forEach(f=>{
+      const cls=f.tipo==='pranzo'?'background:#fff8dd;color:#7a5c00;':'background:#ddeeff;color:#0a3d6e;';
+      h+=`<th style="${cls}padding:2px 4px;border:0.5px solid var(--border);font-size:9px;">${f.label}</th>`;
+    });
+    h+='<th style="background:var(--bg3);padding:2px 4px;border:0.5px solid var(--border);font-size:9px;">Turno</th></tr></thead><tbody>';
+    G.staff.forEach(p=>{
+      const hasAny=fasce.some(f=>personInFascia(fakeWk,d.idx,p.id,f,tipo));
+      if(!hasAny)return;
+      h+=`<tr><td style="text-align:left;padding:2px 5px;border:0.5px solid var(--border);background:#fff;position:sticky;left:0;font-size:10px;white-space:nowrap;">${p.name}</td>`;
+      fasce.forEach(f=>{
+        const working=personInFascia(fakeWk,d.idx,p.id,f,tipo);
+        if(!working){h+='<td style="border:0.5px solid var(--border);color:#ccc;text-align:center;">—</td>';}
+        else{
+          const key=`${d.idx}_${f.id}_${p.id}`;
+          const role=fakeWk.role_assign[key]||'';
+          h+=`<td style="border:0.5px solid var(--border);text-align:center;font-size:9px;${role?'':'color:var(--text3);'}">${role||'·'}</td>`;
+        }
+      });
+      const cp=tipo==='pranzo_cena'?getShiftCode(fakeWk,d.idx,p.id,'pranzo'):'';
+      const cc=tipo==='pranzo_cena'?getShiftCode(fakeWk,d.idx,p.id,'cena'):getShiftCode(fakeWk,d.idx,p.id,null);
+      const turno=tipo==='pranzo_cena'?(cp&&cc?cp+'/'+cc:cp||cc):cc;
+      const cs=turno?shiftColorStyle(turno):'';
+      h+=`<td style="border:0.5px solid var(--border);text-align:center;font-size:9px;font-weight:600;${cs}">${turno||''}</td></tr>`;
+    });
+    h+='</tbody></table></div>';
+  });
+  body.innerHTML=h;
 }
 async function restoreVersion(versionId,dateStr){
   if(!confirm(`Ripristinare la versione del ${dateStr}?\nI turni attuali verranno sovrascritti.`))return;
@@ -1992,6 +2074,147 @@ async function deleteManager(mid,name){
 }
 
 
+
+
+// ===== PRESENZA ONLINE =====
+let presenceInterval=null;
+async function setOnline(){
+  if(!currentManager||!isManager())return;
+  try{
+    await sb.from('config').upsert({key:'online_'+currentManager.id, value:JSON.stringify({name:currentManager.name,at:new Date().toISOString()})});
+  }catch(e){}
+}
+async function setOffline(){
+  if(!currentManager||!isManager())return;
+  try{await sb.from('config').delete().eq('key','online_'+currentManager.id);}catch(e){}
+}
+async function updateOnlineBadge(){
+  if(!isManager())return;
+  try{
+    const {data}=await sb.from('config').select('key,value').like('key','online_%');
+    if(!data||!data.length){document.getElementById('online-badge')&&(document.getElementById('online-badge').textContent='');return;}
+    const now=Date.now();
+    const online=data.map(r=>{
+      try{const v=JSON.parse(r.value);return{name:v.name,at:new Date(v.at).getTime()};}catch(e){return null;}
+    }).filter(v=>v&&now-v.at<120000);// active in last 2 minutes
+    const el=document.getElementById('online-badge');
+    if(el){
+      if(online.length>1){
+        const others=online.filter(v=>v.name!==currentManager?.name).map(v=>v.name);
+        el.innerHTML=others.length?`<span style="background:var(--orange-bg);color:var(--orange-text);border:0.5px solid var(--orange-border);padding:2px 8px;border-radius:20px;font-size:10px;">&#128100; Online anche: ${others.join(', ')}</span>`:'';
+      } else {el.textContent='';}
+    }
+  }catch(e){}
+}
+function startPresence(){
+  if(presenceInterval)clearInterval(presenceInterval);
+  setOnline();
+  presenceInterval=setInterval(()=>{setOnline();updateOnlineBadge();},30000);
+  updateOnlineBadge();
+}
+function stopPresence(){
+  if(presenceInterval){clearInterval(presenceInterval);presenceInterval=null;}
+  setOffline();
+}
+
+// ===== EXPORT PDF =====
+function exportPDF(){
+  const wk=curWeek();if(!wk)return;
+  if(!confirm('Esportare i turni e il giornaliero della settimana "'+wk.name+'" in PDF?'))return;
+  const days=DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:wk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
+  const weekDates=getWeekDates(wk);
+  let cols=[];
+  days.forEach(d=>{
+    const dateStr=weekDates?weekDates[d.idx].getDate():'';
+    const label=dateStr?d.name+' '+dateStr:d.name;
+    if(d.tipo==='pranzo_cena'){cols.push({...d,label,servizio:'pranzo',colLabel:'P'});cols.push({...d,label,servizio:'cena',colLabel:'C'});}
+    else cols.push({...d,label,servizio:null});
+  });
+  let html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Turni '+wk.name+'</title><style>body{font-family:Arial,sans-serif;font-size:10px;margin:16px;}h1{font-size:14px;margin-bottom:8px;}h2{font-size:11px;margin:14px 0 4px;page-break-before:avoid;}table{border-collapse:collapse;width:100%;margin-bottom:12px;}th,td{border:0.5px solid #ccc;padding:2px 4px;text-align:center;}th{background:#f0f0f0;font-weight:600;}.name{text-align:left;font-weight:500;}.off{background:#111;color:#fff;}.b{background:#1a56db;color:#fff;}.d{background:#e65100;color:#fff;}.m{background:#6b7280;color:#fff;}.a{background:#c026d3;color:#fff;}.e{background:#dc2626;color:#fff;}@media print{body{margin:8px;}}</style></head><body>';
+  html+='<h1>Turni settimana: '+wk.name+'</h1>';
+  html+='<table><thead><tr><th class="name">Dipendente</th>';
+  let lastDi=-1;
+  cols.forEach(c=>{if(c.idx===lastDi)return;lastDi=c.idx;const sp=c.tipo==='pranzo_cena'?2:1;html+='<th colspan="'+sp+'">'+c.label+'</th>';});
+  html+='</tr></thead><tbody>';
+  G.staff.forEach(p=>{
+    html+='<tr><td class="name">'+p.name+'</td>';
+    cols.forEach(c=>{
+      const val=getShiftCode(wk,c.idx,p.id,c.servizio)||'';
+      const u=val.toUpperCase();
+      let cls='';
+      if(u==='OFF'||u==='FERIE'||u==='MALATTIA')cls='off';
+      else if(u[0]==='B')cls='b';else if(u[0]==='D')cls='d';else if(u[0]==='M')cls='m';else if(u[0]==='A')cls='a';else if(u[0]==='E')cls='e';
+      html+='<td class="'+cls+'">'+val+'</td>';
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table><h1>Giornaliero per fascia</h1>';
+  days.forEach(d=>{
+    const tipo=d.tipo;
+    const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
+    const fasce=fasciaIdxs.map(i=>ALL_FASCE[i]);
+    const dateStr=weekDates?' '+weekDates[d.idx].getDate():'';
+    html+='<h2>'+d.name+dateStr+'</h2><table><thead><tr><th class="name">Staff</th>';
+    fasce.forEach(f=>{html+='<th>'+f.label+'</th>';});
+    html+='<th>Turno</th></tr></thead><tbody>';
+    G.staff.forEach(p=>{
+      const hasAny=fasce.some(f=>personInFascia(wk,d.idx,p.id,f,tipo));
+      if(!hasAny)return;
+      html+='<tr><td class="name">'+p.name+'</td>';
+      fasce.forEach(f=>{
+        const working=personInFascia(wk,d.idx,p.id,f,tipo);
+        if(!working){html+='<td style="color:#ccc;">&mdash;</td>';}
+        else{const key=d.idx+'_'+f.id+'_'+p.id;const role=wk.role_assign[key]||'';html+='<td>'+role+'</td>';}
+      });
+      const cp=tipo==='pranzo_cena'?getShiftCode(wk,d.idx,p.id,'pranzo'):'';
+      const cc=tipo==='pranzo_cena'?getShiftCode(wk,d.idx,p.id,'cena'):getShiftCode(wk,d.idx,p.id,null);
+      const turno=tipo==='pranzo_cena'?(cp&&cc?cp+'/'+cc:cp||cc):cc;
+      html+='<td><b>'+(turno||'')+'</b></td></tr>';
+    });
+    html+='</tbody></table>';
+  });
+  html+='</body></html>';
+  const win=window.open('','_blank');
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(function(){win.print();},600);
+}
+
+// ===== PRESENZA ONLINE =====
+let presenceInterval=null;
+async function setOnline(){
+  if(!currentManager||!isManager())return;
+  try{await sb.from('config').upsert({key:'online_'+currentManager.id,value:JSON.stringify({name:currentManager.name,at:new Date().toISOString()})});}catch(e){}
+}
+async function setOffline(){
+  if(!currentManager||!isManager())return;
+  try{await sb.from('config').delete().eq('key','online_'+currentManager.id);}catch(e){}
+}
+async function updateOnlineBadge(){
+  if(!isManager())return;
+  try{
+    const {data}=await sb.from('config').select('key,value').like('key','online_%');
+    if(!data||!data.length){const el=document.getElementById('online-badge');if(el)el.innerHTML='';return;}
+    const now=Date.now();
+    const online=data.map(r=>{try{const v=JSON.parse(r.value);return{name:v.name,at:new Date(v.at).getTime()};}catch(e){return null;}}).filter(v=>v&&now-v.at<120000);
+    const el=document.getElementById('online-badge');
+    if(el){
+      const others=online.filter(v=>v.name!==currentManager?.name).map(v=>v.name);
+      el.innerHTML=others.length?'<span style="background:var(--orange-bg);color:var(--orange-text);border:0.5px solid var(--orange-border);padding:2px 8px;border-radius:20px;font-size:10px;">&#128100; Online: '+others.join(', ')+'</span>':'';
+    }
+  }catch(e){}
+}
+function startPresence(){
+  if(presenceInterval)clearInterval(presenceInterval);
+  setOnline();
+  presenceInterval=setInterval(function(){setOnline();updateOnlineBadge();},30000);
+  updateOnlineBadge();
+}
+function stopPresence(){
+  if(presenceInterval){clearInterval(presenceInterval);presenceInterval=null;}
+  setOffline();
+}
 
 // ===== CONFRONTO SETTIMANA =====
 function openCompare(){
