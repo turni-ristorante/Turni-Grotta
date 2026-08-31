@@ -194,6 +194,12 @@ const REPARTI={
     roles:['TAPAS / DESSERT','PRIMI','SECONDI','IMPIATTAMENTO','PASS','PIZZERIA','PLONGE'],
     // In cucina i codici turno hanno sfondo chiaro e scritta nera
     textColor:'#111',
+    // Il colore non dipende dal codice ma dalla FORMA del turno:
+    // due blocchi = spezzato, solo il primo = mattina, solo il
+    // secondo = sera. Un colore scritto sul singolo turno vince
+    // comunque su questa regola.
+    colorByShape:{doppio:'#fcd34d',mattina:'#86efac',sera:'#93c5fd'},
+    shapeLabels:{doppio:'Spezzato',mattina:'Mattina',sera:'Sera'},
     // ATTENZIONE: "tipo" non indica l'ora, indica in quali giornate
     // la fascia compare. Le fasce 'pranzo' spariscono nei giorni di
     // sola cena; quelle 'cena' compaiono sempre.
@@ -219,6 +225,16 @@ function repDef(r){return REPARTI[r||REP]||REPARTI[REP_DEFAULT];}
 // Cosi' aggiungere o togliere una fascia non rinumera le altre e non
 // richiede di rimappare i turni gia' salvati nel database.
 function fascia(id){return ALL_FASCE.find(f=>f.id===id)||null;}
+// doppio = ha entrambi i blocchi orari; mattina = solo il primo;
+// sera = solo il secondo. OFF e FERIE non hanno orari: null.
+function shiftShape(sh){
+  if(!sh)return null;
+  const primo=!!(sh.s1&&sh.e1), secondo=!!(sh.s2&&sh.e2);
+  if(primo&&secondo)return'doppio';
+  if(primo)return'mattina';
+  if(secondo)return'sera';
+  return null;
+}
 function repLabel(r){return repDef(r).label;}
 function repOf(x){return (x&&x.reparto)?x.reparto:REP_DEFAULT;}
 // Le config di sala restano sulle chiavi storiche: nessuna migrazione
@@ -245,9 +261,15 @@ function shiftColorStyle(code){
   const u=code.toUpperCase();
   if(u==='OFF'||u==='FERIE'||u==='MALATTIA')return'background:#111;color:#fff;';
   const txt=shiftTextColor(code);
-  // Se il turno ha un colore esplicito vince su quello dedotto dalla lettera
+  // 1) colore scritto sul turno, 2) colore per forma del reparto,
+  // 3) colore dedotto dalla lettera iniziale
   const sh=getShift(code);
   if(sh&&sh.color)return'background:'+sh.color+';color:'+txt+';';
+  const byShape=repDef().colorByShape;
+  if(sh&&byShape){
+    const forma=shiftShape(sh);
+    if(forma&&byShape[forma])return'background:'+byShape[forma]+';color:'+txt+';';
+  }
   const l=u[0];
   if(l==='B')return'background:#1a56db;color:'+txt+';';
   if(l==='D')return'background:#e65100;color:'+txt+';';
@@ -317,10 +339,10 @@ const DEF_SHIFTS=[
 const DEF_SHIFTS_CUCINA=[
   {code:'OFF',s1:'',e1:'',s2:'',e2:'',is_off:true,is_ferie:false,fasce:[]},
   {code:'FERIE',s1:'',e1:'',s2:'',e2:'',is_off:false,is_ferie:true,fasce:[]},
-  {code:'S', s1:'09:00',e1:'11:00',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[0],color:'#e2e8f0'},
-  {code:'P', s1:'11:00',e1:'15:30',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[1],color:'#a7f3d0'},
-  {code:'C', s1:'',e1:'',s2:'18:30',e2:'00:30',is_off:false,is_ferie:false,fasce:[3],color:'#ddd6fe'},
-  {code:'PC',s1:'11:00',e1:'15:30',s2:'18:30',e2:'00:30',is_off:false,is_ferie:false,fasce:[1,3],color:'#fde68a'},
+  {code:'S', s1:'09:00',e1:'11:00',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[0]},
+  {code:'P', s1:'11:00',e1:'15:30',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[1]},
+  {code:'C', s1:'',e1:'',s2:'18:30',e2:'00:30',is_off:false,is_ferie:false,fasce:[3]},
+  {code:'PC',s1:'11:00',e1:'15:30',s2:'18:30',e2:'00:30',is_off:false,is_ferie:false,fasce:[1,3]},
 ];
 
 let G={staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
@@ -832,6 +854,13 @@ function goTab(t){
 // La legenda colori si costruisce dai turni del reparto attivo,
 // non piu' da una lista fissa B/D/M/A/E.
 function colorLegendHtml(){
+  const byShape=repDef().colorByShape;
+  if(byShape){
+    const lbl=repDef().shapeLabels||{};
+    return Object.keys(byShape).map(k=>
+      `<span class="color-legend-item"><span class="color-dot" style="background:${byShape[k]};"></span>${lbl[k]||k}</span>`).join('')
+      +'<span class="color-legend-item"><span class="color-dot" style="background:#111;"></span>OFF/FERIE</span>';
+  }
   const work=G.shifts.filter(s=>{const u=(s.code||'').toUpperCase();return u!=='OFF'&&u!=='FERIE'&&u!=='MALATTIA'&&!s.is_off&&!s.is_ferie;});
   const seen=[];
   work.forEach(s=>{
