@@ -200,10 +200,12 @@ const REPARTI={
     // Scarichi e Pomeriggio sono marcati 'cena' proprio per questo:
     // ci sono anche quando il locale apre solo la sera.
     fasce:[
-      {id:0,label:'SCARICHI',   orario:'09:00/11:00',tipo:'cena'},
-      {id:1,label:'PRANZO',     orario:'11:00/15:30',tipo:'pranzo'},
-      {id:2,label:'POMERIGGIO', orario:'15:30/18:30',tipo:'cena'},
-      {id:3,label:'CENA',       orario:'18:30/00:30',tipo:'cena'},
+      {id:0,label:'SCARICHI',orario:'09:00/11:00',tipo:'cena'},
+      {id:1,label:'PRANZO',  orario:'11:00/15:30',tipo:'pranzo'},
+      // id 2 = POMERIGGIO, tolta per ora. L'id resta libero: per
+      // riattivarla basta rimettere qui la riga, senza toccare i dati.
+      // {id:2,label:'POMERIGGIO',orario:'15:30/18:30',tipo:'cena'},
+      {id:3,label:'CENA',    orario:'18:30/00:30',tipo:'cena'},
     ]
   }
 };
@@ -213,6 +215,10 @@ let ROLES=REPARTI[REP_DEFAULT].roles;
 let ALL_FASCE=REPARTI[REP_DEFAULT].fasce;
 let IDX_CENA=[3,4,5];let IDX_PC=[0,1,2,3,4,5];
 function repDef(r){return REPARTI[r||REP]||REPARTI[REP_DEFAULT];}
+// Le fasce si cercano SEMPRE per id, mai per posizione nell'array.
+// Cosi' aggiungere o togliere una fascia non rinumera le altre e non
+// richiede di rimappare i turni gia' salvati nel database.
+function fascia(id){return ALL_FASCE.find(f=>f.id===id)||null;}
 function repLabel(r){return repDef(r).label;}
 function repOf(x){return (x&&x.reparto)?x.reparto:REP_DEFAULT;}
 // Le config di sala restano sulle chiavi storiche: nessuna migrazione
@@ -1210,7 +1216,7 @@ function renderDayContent(){
   const wk=isManager()?curWeek():getDepWeek();if(!wk)return;
   const di=wk.selected_day;const tipo=wk.day_config[di];
   const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
-  const fasce=fasciaIdxs.map(i=>ALL_FASCE[i]);
+  const fasce=fasciaIdxs.map(i=>fascia(i)).filter(Boolean);
   function fHead(f){const cls=f.tipo==='pranzo'?'fp':'fc';return`<th class="${cls}">${f.label}<br><span style="font-size:10px;font-weight:400;">${f.orario}</span></th>`;}
   let h=`<p style="font-size:14px;font-weight:500;margin-bottom:.75rem;">${DAY_NAMES[di]}</p>`;
   h+='<div class="wrap"><table><thead><tr><th class="scol"></th>';
@@ -1442,7 +1448,7 @@ function renderFabbisogno(){
     const sub=servizio==='pranzo'?' <span style="font-size:10px;font-weight:400;color:#7a5c00;">Pranzo</span>':servizio==='cena'?' <span style="font-size:10px;font-weight:400;color:#0a3d6e;">Cena</span>':'';
     // Fasce to show role reqs for
     const tipo2=wk?wk.day_config[dayIdx]||'cena':'cena';
-    const allFasceForCard=tipo2==='pranzo_cena'?IDX_PC.map(i=>ALL_FASCE[i]):IDX_CENA.map(i=>ALL_FASCE[i]);
+    const allFasceForCard=(tipo2==='pranzo_cena'?IDX_PC:IDX_CENA).map(i=>fascia(i)).filter(Boolean);
     const fasceForCard=allFasceForCard.filter(f=>{
       if(!servizio)return true;
       if(servizio==='pranzo')return f.tipo==='pranzo';
@@ -1850,7 +1856,7 @@ function autoFillRoles(){
   const wk=curWeek();if(!wk)return;
   const di=wk.selected_day;const tipo=wk.day_config[di];
   const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
-  const fasce=fasciaIdxs.map(i=>ALL_FASCE[i]);
+  const fasce=fasciaIdxs.map(i=>fascia(i)).filter(Boolean);
   pushUndo(wk);
   fasce.forEach(f=>{
     const fabKey=tipo==='pranzo_cena'?(f.tipo==='pranzo'?`${di}_pranzo`:`${di}_cena`):String(di);
@@ -1898,7 +1904,7 @@ function checkIncompleteness(wk){
     const di=d.idx;const tipo=d.tipo;
     const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
     fasciaIdxs.forEach(fi=>{
-      const f=ALL_FASCE[fi];
+      const f=fascia(fi);if(!f)return;
       const fabKey=tipo==='pranzo_cena'?(f.tipo==='pranzo'?`${di}_pranzo`:`${di}_cena`):String(di);
       const fab=G.fabbisogno[fabKey];
       if(!fab||!fab.roleReqs||!fab.roleReqs[f.id])return;
@@ -2031,7 +2037,7 @@ function applyPosRules(wk,di,tipo,roleAssign){
     if((rule.excludeDays||[]).includes(di))return;
     const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
     fasciaIdxs.forEach(fi=>{
-      const f=ALL_FASCE[fi];
+      const f=fascia(fi);if(!f)return;
       const keyA=`${di}_${f.id}_${rule.personA}`;
       const keyB=`${di}_${f.id}_${rule.personB}`;
       const roleA=roleAssign[keyA];
@@ -2229,7 +2235,7 @@ async function previewVersion(versionId){
   days.forEach(d=>{
     const tipo=d.tipo;
     const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
-    const fasce=fasciaIdxs.map(i=>ALL_FASCE[i]);
+    const fasce=fasciaIdxs.map(i=>fascia(i)).filter(Boolean);
     const dateStr=weekDates?` ${weekDates[d.idx].getDate()}`:' ';
     h+=`<p style="font-size:10px;font-weight:600;color:var(--text2);margin:8px 0 3px;">${d.name}${dateStr}</p>`;
     h+='<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;width:100%;margin-bottom:8px;">';
@@ -2447,7 +2453,7 @@ function exportPDF(){
   days.forEach(d=>{
     const tipo=d.tipo;
     const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
-    const fasce=fasciaIdxs.map(i=>ALL_FASCE[i]);
+    const fasce=fasciaIdxs.map(i=>fascia(i)).filter(Boolean);
     const dateStr=weekDates?' '+weekDates[d.idx].getDate():'';
     html+='<h2>'+d.name+dateStr+'</h2><table><thead><tr><th class="name">Staff</th>';
     fasce.forEach(f=>{html+='<th>'+f.label+'</th>';});
