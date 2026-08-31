@@ -170,21 +170,53 @@ const SUPABASE_KEY='sb_publishable_9qJpOrCPymeRQuwrxtgFCA_aTwUsiKy';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 const DAY_NAMES=['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
-const ROLES=['DEHOOR','PASS BEV FUORI','RECEPTION','BAR FUORI','PASS FOOD','GROTTA','BAR DENTRO','PASS BEV DENTRO','SPOSE','G.ALTA SX','G.ALTA DX'];
-const ALL_FASCE=[
-  {id:0,label:'MATTINA',orario:'10:30/12:00',tipo:'pranzo'},
-  {id:1,label:'PRANZO',orario:'12:00/15:30',tipo:'pranzo'},
-  {id:2,label:'DOPO PRANZO',orario:'15:30/16:30',tipo:'pranzo'},
-  {id:3,label:'APERITIVO',orario:'16:30/19:00',tipo:'cena'},
-  {id:4,label:'CENA',orario:'19:00/00:30',tipo:'cena'},
-  {id:5,label:'DOPO CENA',orario:'00:30/C',tipo:'cena'},
-];
-const IDX_CENA=[3,4,5];const IDX_PC=[0,1,2,3,4,5];
+// ===== REPARTI =====
+// Fasce e postazioni non sono piu' globali: ogni reparto ha le proprie.
+// ATTENZIONE: gli id delle fasce devono essere 0,1,2... nell'ordine
+// dell'array, perche' altrove si indicizza ALL_FASCE per id.
+const REPARTI={
+  sala:{
+    id:'sala',
+    label:'Sala & Bar',
+    roles:['DEHOOR','PASS BEV FUORI','RECEPTION','BAR FUORI','PASS FOOD','GROTTA','BAR DENTRO','PASS BEV DENTRO','SPOSE','G.ALTA SX','G.ALTA DX'],
+    fasce:[
+      {id:0,label:'MATTINA',orario:'10:30/12:00',tipo:'pranzo'},
+      {id:1,label:'PRANZO',orario:'12:00/15:30',tipo:'pranzo'},
+      {id:2,label:'DOPO PRANZO',orario:'15:30/16:30',tipo:'pranzo'},
+      {id:3,label:'APERITIVO',orario:'16:30/19:00',tipo:'cena'},
+      {id:4,label:'CENA',orario:'19:00/00:30',tipo:'cena'},
+      {id:5,label:'DOPO CENA',orario:'00:30/C',tipo:'cena'},
+    ]
+  },
+  cucina:{
+    id:'cucina',
+    label:'Cucina & Pizzeria',
+    roles:['TAPAS / DESSERT','PRIMI','SECONDI','IMPIATTAMENTO','PASS','PIZZERIA','PLONGE'],
+    fasce:[
+      {id:0,label:'PRANZO',orario:'12:00/15:30',tipo:'pranzo'},
+      {id:1,label:'CENA',orario:'19:00/00:30',tipo:'cena'},
+    ]
+  }
+};
+const REP_DEFAULT='sala';
+let REP=REP_DEFAULT;
+let ROLES=REPARTI[REP_DEFAULT].roles;
+let ALL_FASCE=REPARTI[REP_DEFAULT].fasce;
+let IDX_CENA=[3,4,5];let IDX_PC=[0,1,2,3,4,5];
+function repDef(r){return REPARTI[r||REP]||REPARTI[REP_DEFAULT];}
+function repLabel(r){return repDef(r).label;}
+function repOf(x){return (x&&x.reparto)?x.reparto:REP_DEFAULT;}
+// Le config di sala restano sulle chiavi storiche: nessuna migrazione
+// dei dati esistenti. Gli altri reparti usano una chiave suffissata.
+function configKey(base,r){const rr=r||REP;return rr===REP_DEFAULT?base:base+'__'+rr;}
 
 function shiftColorStyle(code){
   if(!code)return'';
   const u=code.toUpperCase();
   if(u==='OFF'||u==='FERIE'||u==='MALATTIA')return'background:#111;color:#fff;';
+  // Se il turno ha un colore esplicito vince su quello dedotto dalla lettera
+  const sh=getShift(code);
+  if(sh&&sh.color)return'background:'+sh.color+';color:#fff;';
   const l=u[0];
   if(l==='B')return'background:#1a56db;color:#fff;';
   if(l==='D')return'background:#e65100;color:#fff;';
@@ -251,8 +283,44 @@ const DEF_SHIFTS=[
   {code:'E16',s1:'',e1:'',s2:'20:00',e2:'C',is_off:false,is_ferie:false,fasce:[4,5]},
 ];
 
-let G={staff:[],shifts:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
+const DEF_SHIFTS_CUCINA=[
+  {code:'OFF',s1:'',e1:'',s2:'',e2:'',is_off:true,is_ferie:false,fasce:[]},
+  {code:'FERIE',s1:'',e1:'',s2:'',e2:'',is_off:false,is_ferie:true,fasce:[]},
+  {code:'P',s1:'11:00',e1:'15:30',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[0],color:'#0f766e'},
+  {code:'C',s1:'',e1:'',s2:'18:00',e2:'00:30',is_off:false,is_ferie:false,fasce:[1],color:'#7c3aed'},
+  {code:'PC',s1:'11:00',e1:'15:30',s2:'18:00',e2:'00:30',is_off:false,is_ferie:false,fasce:[0,1],color:'#b45309'},
+];
+
+let G={staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
 let role='';let currentManager=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
+
+// applyReparto ricalcola tutte le viste derivate dal reparto attivo.
+// G.staff e G.shifts restano i nomi usati ovunque nell'app, ma ora
+// sono la fetta del reparto corrente; G.allStaff e G.allShifts
+// tengono il dato completo caricato dal database.
+function applyReparto(r){
+  if(r)REP=r;
+  const def=repDef();
+  ROLES=def.roles;
+  ALL_FASCE=def.fasce;
+  IDX_PC=def.fasce.map(f=>f.id);
+  IDX_CENA=def.fasce.filter(f=>f.tipo==='cena').map(f=>f.id);
+  G.staff=G.allStaff.filter(s=>repOf(s)===REP);
+  G.shifts=G.allShifts.filter(s=>repOf(s)===REP);
+  if(!G.shifts.length&&REP==='cucina'){
+    // Set iniziale in memoria: diventa definitivo solo quando salvi
+    G.shifts=JSON.parse(JSON.stringify(DEF_SHIFTS_CUCINA));
+  }
+  const raw=b=>{const k=configKey(b);const row=G.rawConfig.find(x=>x.key===k);return row?row.value:null;};
+  const asJson=(b,fb)=>{const v=raw(b);if(!v)return fb;try{return JSON.parse(v);}catch(e){return fb;}};
+  G.fabbisogno=asJson('fabbisogno',{});
+  G.equivalenze=asJson('equivalenze',[]);
+  G.regole=asJson('regole',[]);
+  G.roleRules=asJson('roleRules',[]);
+  G.posRules=asJson('posRules',[]);
+  migrateFabbisogno();
+  selectedStaffId=null;
+}
 
 function isExtra(p){return (p.role||'').trim().toUpperCase()==='EXTRA';}
 function getEquivGroup(code){const grp=G.equivalenze.find(g=>g.includes(code));return grp||[code];}
@@ -260,22 +328,21 @@ function getEquivGroup(code){const grp=G.equivalenze.find(g=>g.includes(code));r
 async function dbLoad(){
   try{
     const {data:cfg}=await sb.from('config').select('*');
+    G.rawConfig=cfg||[];
     if(cfg){cfg.forEach(r=>{
       if(r.key==='managerPwd')G.managerPwd=r.value;
       if(r.key==='currentWeekId')G.currentWeekId=r.value;
-      if(r.key==='fabbisogno')try{G.fabbisogno=JSON.parse(r.value);}catch(e){}
-      if(r.key==='equivalenze')try{G.equivalenze=JSON.parse(r.value);}catch(e){}
-      if(r.key==='regole')try{G.regole=JSON.parse(r.value);}catch(e){}
-      if(r.key==='roleRules')try{G.roleRules=JSON.parse(r.value);}catch(e){}
-      if(r.key==='posRules')try{G.posRules=JSON.parse(r.value);}catch(e){}
     });}
     const {data:staff}=await sb.from('staff').select('*');
-    G.staff=(staff||[]).map(s=>({...s,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);
+    G.allStaff=(staff||[]).map(s=>({...s,reparto:s.reparto||REP_DEFAULT,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);
     const {data:shifts}=await sb.from('shifts').select('*');
-    if(shifts&&shifts.length>0){G.shifts=shifts.map(s=>({...s,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[],sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);}
-    else{G.shifts=JSON.parse(JSON.stringify(DEF_SHIFTS));await dbSaveShifts();}
+    let seedShifts=false;
+    if(shifts&&shifts.length>0){G.allShifts=shifts.map(s=>({...s,reparto:s.reparto||REP_DEFAULT,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[],sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);}
+    else{G.allShifts=JSON.parse(JSON.stringify(DEF_SHIFTS)).map(s=>({...s,reparto:REP_DEFAULT}));seedShifts=true;}
+    applyReparto();
+    if(seedShifts)await dbSaveShifts();
     const {data:weeks}=await sb.from('weeks').select('*');
-    G.weeks=(weeks||[]).map(w=>({...w,day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||'',draft_assign:w.draft_assign||null,draft_role_assign:w.draft_role_assign||null,last_saved:w.last_saved||null}));
+    G.weeks=(weeks||[]).map(w=>({...w,published_rep:(w.published_rep&&typeof w.published_rep==='object')?w.published_rep:{},day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||'',draft_assign:w.draft_assign||null,draft_role_assign:w.draft_role_assign||null,last_saved:w.last_saved||null}));
     console.log('Loaded weeks from Supabase:', G.weeks.map(w=>({name:w.name,last_saved:w.last_saved,days:Object.keys(w.shift_assign).length})));
     if(!G.weeks.length){const w=emptyWeek('Prima settimana');G.weeks=[w];await sb.from('weeks').insert(weekToDb(w));}
     if(!G.currentWeekId||!G.weeks.find(w=>w.id===G.currentWeekId)){G.currentWeekId=G.weeks[0].id;await sb.from('config').upsert({key:'currentWeekId',value:G.currentWeekId});}
@@ -296,6 +363,7 @@ function weekToDb(w){
     id:w.id,
     name:w.name,
     published:w.published||false,
+    published_rep:w.published_rep||{},
     day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],
     shift_assign:w.shift_assign||{},
     role_assign:w.role_assign||{},
@@ -308,16 +376,78 @@ function weekToDb(w){
   if(w.draft_role_assign)obj.draft_role_assign=w.draft_role_assign;
   return obj;
 }
-async function dbSaveWeek(w){
+// Restituisce l'id dipendente da una chiave di shift_assign (pid, pid_P, pid_C)
+function pidFromKey(k){return String(k).replace(/_(P|C)$/,'');}
+
+// Campi della settimana che valgono per tutto il locale. Su questi vince
+// SEMPRE il valore del server, tranne per la funzione che lo sta
+// cambiando di proposito (che lo dichiara in opts.changes). Serve perche'
+// ogni salvataggio riscrive l'intera riga: senza questo, un manager con
+// una copia vecchia in memoria riporterebbe indietro il nome, la
+// pubblicazione o i giorni di apertura cambiati da qualcun altro.
+// "published" NON e' qui: la pubblicazione e' per reparto e viene unita
+// come le assegnazioni. L'apertura invece resta condivisa di proposito:
+// se il locale e' aperto lo e' per tutti i reparti.
+const WEEK_SHARED_FIELDS=['name','startDate','day_config'];
+
+// Tiene le assegnazioni del mio reparto dalla copia locale e quelle
+// degli altri reparti dalla versione del server.
+function mergeShiftAssign(local,server,mine){
+  const L=local||{},S=server||{},out={};
+  Object.keys(L).forEach(di=>Object.keys(L[di]||{}).forEach(k=>{
+    if(mine.has(pidFromKey(k)))(out[di]=out[di]||{})[k]=L[di][k];
+  }));
+  Object.keys(S).forEach(di=>Object.keys(S[di]||{}).forEach(k=>{
+    if(!mine.has(pidFromKey(k)))(out[di]=out[di]||{})[k]=S[di][k];
+  }));
+  return out;
+}
+function mergeRoleAssign(local,server,mine){
+  const L=local||{},S=server||{},out={};
+  Object.keys(L).forEach(k=>{const p=k.split('_');if(p.length!==3||mine.has(p[2]))out[k]=L[k];});
+  Object.keys(S).forEach(k=>{const p=k.split('_');if(p.length===3&&!mine.has(p[2]))out[k]=S[k];});
+  return out;
+}
+
+async function dbSaveWeek(w,opts){
   try{
-    // Check for conflicts: if server has a newer version, warn before overwriting
-    const {data:serverData}=await sb.from('weeks').select('last_saved').eq('id',w.id).single();
+    const changes=(opts&&opts.changes)||[];
+    // La settimana e' condivisa fra i reparti: prima di scrivere rileggo
+    // dal server la versione aggiornata e ne conservo tutto cio' che non
+    // e' mio, cosi' il salvataggio di un reparto non tocca l'altro.
+    const {data:serverData}=await sb.from('weeks')
+      .select('last_saved,shift_assign,role_assign,draft_assign,draft_role_assign,name,published,published_rep,startDate,day_config')
+      .eq('id',w.id).single();
+    if(serverData){
+      const mine=new Set(G.allStaff.filter(s=>repOf(s)===REP).map(s=>s.id));
+      w.shift_assign=mergeShiftAssign(w.shift_assign,serverData.shift_assign,mine);
+      w.role_assign=mergeRoleAssign(w.role_assign,serverData.role_assign,mine);
+      // Anche le bozze sono condivise e vanno unite allo stesso modo
+      if(w.draft_assign||serverData.draft_assign){
+        w.draft_assign=mergeShiftAssign(w.draft_assign,serverData.draft_assign,mine);
+        w.draft_role_assign=mergeRoleAssign(w.draft_role_assign,serverData.draft_role_assign,mine);
+      }
+      // Pubblicazione: tengo la mia, dal server prendo quella degli altri
+      const srvPub=(serverData.published_rep&&typeof serverData.published_rep==='object')?serverData.published_rep:{};
+      const myPub=(w.published_rep&&typeof w.published_rep==='object')?w.published_rep:{};
+      const merged=Object.assign({},srvPub);
+      if(Object.prototype.hasOwnProperty.call(myPub,REP))merged[REP]=!!myPub[REP];
+      if(!Object.prototype.hasOwnProperty.call(merged,REP_DEFAULT)){
+        merged[REP_DEFAULT]=(REP===REP_DEFAULT)?!!w.published:!!serverData.published;
+      }
+      w.published_rep=merged;
+      w.published=!!merged[REP_DEFAULT];
+      // Metadati condivisi: vince il server, salvo dichiarazione esplicita
+      WEEK_SHARED_FIELDS.forEach(f=>{
+        if(changes.indexOf(f)===-1&&serverData[f]!==undefined&&serverData[f]!==null)w[f]=serverData[f];
+      });
+    }
     if(serverData&&serverData.last_saved&&w.last_saved){
       const serverTime=new Date(serverData.last_saved).getTime();
       const localTime=new Date(w.last_saved).getTime();
       if(serverTime>localTime+5000){// server is more than 5 seconds newer
         const serverTimeStr=new Date(serverData.last_saved).toLocaleString('it-IT');
-        const ok=confirm(`⚠️ Attenzione: qualcun altro ha salvato questa settimana alle ${serverTimeStr}.\n\nSe continui sovrascriverai le loro modifiche.\n\nVuoi sovrascrivere?`);
+        const ok=confirm(`⚠️ Attenzione: qualcun altro ha salvato questa settimana alle ${serverTimeStr}.\n\nLe assegnazioni degli altri reparti sono gia' state preservate.\nSe continui sovrascriverai eventuali modifiche fatte su ${repLabel()}.\n\nVuoi sovrascrivere?`);
         if(!ok){setSyncStatus('err');return;}
       }
     }
@@ -339,41 +469,67 @@ async function dbSaveWeek(w){
 }
 async function dbSaveShifts(){
   try{
-    if(G.shifts.length){
-      const shiftsWithOrder=G.shifts.map((s,i)=>({...s,sort_order:i}));
-      await sb.from('shifts').upsert(shiftsWithOrder,{onConflict:'code'});
-      const codes=G.shifts.map(s=>s.code);
-      await sb.from('shifts').delete().not('code','in',`(${codes.map(c=>`"${c}"`).join(',')})`);
+    // La cancellazione e' SEMPRE ristretta al reparto corrente: senza
+    // .eq('reparto',REP) salvare la cucina cancellerebbe i turni di sala.
+    const rows=G.shifts.map((s,i)=>({...s,reparto:REP,sort_order:i}));
+    if(rows.length){
+      await sb.from('shifts').upsert(rows,{onConflict:'reparto,code'});
+      const codes=rows.map(s=>s.code);
+      await sb.from('shifts').delete().eq('reparto',REP).not('code','in',`(${codes.map(c=>`"${c}"`).join(',')})`);
     } else {
-      await sb.from('shifts').delete().neq('code','__none__');
+      await sb.from('shifts').delete().eq('reparto',REP);
     }
+    G.shifts=rows;
+    G.allShifts=G.allShifts.filter(s=>repOf(s)!==REP).concat(rows);
     setSyncStatus('ok');
   }catch(e){console.error('dbSaveShifts error:',e);setSyncStatus('err');}
 }
 async function dbSaveStaff(){
   try{
-    if(G.staff.length){
-      const rows=G.staff.map((s,i)=>({id:s.id,name:s.name,role:s.role,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:i}));
-      // Upsert: update if exists, insert if not — never deletes
+    // Come sopra: la delete e' ristretta al reparto corrente, altrimenti
+    // un manager cancellerebbe l'anagrafica dell'altro reparto.
+    const rows=G.staff.map((s,i)=>({id:s.id,name:s.name,role:s.role,reparto:REP,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:i}));
+    if(rows.length){
       await sb.from('staff').upsert(rows,{onConflict:'id'});
-      // Remove staff that no longer exist
-      const ids=G.staff.map(s=>s.id);
-      await sb.from('staff').delete().not('id','in',`(${ids.map(id=>`"${id}"`).join(',')})`);
+      const ids=rows.map(s=>s.id);
+      await sb.from('staff').delete().eq('reparto',REP).not('id','in',`(${ids.map(id=>`"${id}"`).join(',')})`);
     } else {
-      await sb.from('staff').delete().neq('id','__none__');
+      await sb.from('staff').delete().eq('reparto',REP);
     }
+    G.staff=G.staff.map((s,i)=>({...s,reparto:REP,sort_order:i}));
+    G.allStaff=G.allStaff.filter(s=>repOf(s)!==REP).concat(G.staff);
     setSyncStatus('ok');
   }catch(e){console.error('dbSaveStaff error:',e);setSyncStatus('err');}
 }
-async function dbSaveConfig(k,v){try{await sb.from('config').upsert({key:k,value:typeof v==='string'?v:JSON.stringify(v)});setSyncStatus('ok');}catch(e){setSyncStatus('err');}}
+async function dbSaveConfig(k,v){try{const val=typeof v==='string'?v:JSON.stringify(v);await sb.from('config').upsert({key:k,value:val});const row=G.rawConfig.find(x=>x.key===k);if(row)row.value=val;else G.rawConfig.push({key:k,value:val});setSyncStatus('ok');}catch(e){setSyncStatus('err');}}
 function setSyncStatus(s){syncStatus=s;const el=document.getElementById('sync-status');if(el){el.textContent=s==='ok'?'● Sincronizzato':'● Errore';el.className='sync-status '+(s==='ok'?'ok':'err');}}
-function emptyWeek(name){return{id:'w'+Date.now()+Math.random().toString(36).slice(2,6),name:name||'Nuova settimana',published:false,day_config:['cena','cena','cena','cena','cena','cena','cena'],shift_assign:{},role_assign:{},selected_day:0};}
+function emptyWeek(name){return{id:'w'+Date.now()+Math.random().toString(36).slice(2,6),name:name||'Nuova settimana',published:false,published_rep:{},day_config:['cena','cena','cena','cena','cena','cena','cena'],shift_assign:{},role_assign:{},selected_day:0};}
 function curWeek(){return G.weeks.find(w=>w.id===G.currentWeekId)||G.weeks[0];}
 function getShift(code){return G.shifts.find(s=>s.code===code)||null;}
 function isFuoriServizio(code){if(!code)return true;const u=code.toUpperCase();if(u==='MALATTIA')return true;const s=getShift(code);return !s||s.is_off||s.is_ferie;}
 function shiftInFascia(code,fid){if(isFuoriServizio(code))return false;const s=getShift(code);if(!s)return false;return s.fasce&&s.fasce.includes(fid);}
-const isManager=()=>role==='manager';
-function getVisibleWeeks(){return isManager()?G.weeks:G.weeks.filter(w=>w.published);}
+const isManager=()=>role==='manager'||role==='responsabile';
+const isResponsabile=()=>role==='responsabile';
+// La pubblicazione e' per reparto: sala puo' pubblicare i suoi turni
+// anche se la cucina sta ancora lavorando, e viceversa.
+// published_rep = {"sala":true,"cucina":false}
+// Il vecchio campo booleano "published" resta come stato storico della
+// sala, per le settimane create prima di questa modifica.
+function isPublished(w,r){
+  const rr=r||REP;
+  const m=(w&&w.published_rep&&typeof w.published_rep==='object')?w.published_rep:null;
+  if(m&&Object.prototype.hasOwnProperty.call(m,rr))return !!m[rr];
+  return rr===REP_DEFAULT?!!(w&&w.published):false;
+}
+function setPublished(w,r,v){
+  w.published_rep=Object.assign({},w.published_rep||{});
+  w.published_rep[r]=!!v;
+  if(r===REP_DEFAULT)w.published=!!v;
+}
+function pubSummary(w){
+  return Object.keys(REPARTI).map(k=>REPARTI[k].label+': '+(isPublished(w,k)?'pubblicata':'bozza')).join(' — ');
+}
+function getVisibleWeeks(){return isManager()?G.weeks:G.weeks.filter(w=>isPublished(w));}
 function getDepWeek(){const vw=getVisibleWeeks();return vw.find(w=>w.id===G.currentWeekId)||vw[0]||null;}
 function staffName(id){const p=G.staff.find(s=>s.id===id);return p?p.name:id;}
 function isWorking(assign,pid){const c=assign[pid]||'';return c&&!isFuoriServizio(c);}
@@ -382,7 +538,10 @@ function renderApp(){
   if(!role){renderLogin();return;}
   document.getElementById('app').innerHTML=`
     <div class="topbar">
-      <span class="role-badge ${role}">${role==='manager'?(currentManager?currentManager.name:'Manager'):'Dipendente'}</span>
+      <span class="role-badge ${role}">${isManager()?(currentManager?currentManager.name:'Manager'):'Dipendente'}</span>
+      ${isResponsabile()
+        ?`<select class="week-selector" id="rep-selector" title="Reparto" onchange="switchReparto(this.value)" style="max-width:170px;">${Object.keys(REPARTI).map(k=>`<option value="${k}"${k===REP?' selected':''}>${REPARTI[k].label}</option>`).join('')}</select>`
+        :`<span class="role-badge" style="background:var(--bg3);color:var(--text2);">${repLabel()}</span>`}
       ${isManager()?`<select class="week-selector" id="week-selector" onchange="switchWeek(this.value)"></select>
         <button class="btn primary" style="font-size:11px;padding:4px 10px;" onclick="goTab('settimane')">Settimane</button>`
       :`<select class="week-selector" id="week-selector-dep" onchange="switchWeekDep(this.value)" style="max-width:220px;"></select>`}
@@ -396,12 +555,7 @@ function renderApp(){
     <div id="sec-turni" class="sec active">
       <div class="color-legend">
         <span style="font-size:11px;font-weight:500;color:var(--text2);margin-right:4px;">Turni:</span>
-        <span class="color-legend-item"><span class="color-dot" style="background:#1a56db;"></span>B</span>
-        <span class="color-legend-item"><span class="color-dot" style="background:#e65100;"></span>D</span>
-        <span class="color-legend-item"><span class="color-dot" style="background:#6b7280;"></span>M</span>
-        <span class="color-legend-item"><span class="color-dot" style="background:#c026d3;"></span>A</span>
-        <span class="color-legend-item"><span class="color-dot" style="background:#dc2626;"></span>E</span>
-        <span class="color-legend-item"><span class="color-dot" style="background:#111;"></span>OFF/FERIE</span>
+        ${colorLegendHtml()}
         ${isManager()?`<button class="btn" style="font-size:11px;padding:4px 10px;" onclick="exportPDF()">&#128196; Esporta PDF</button>
           <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openCompare()">&#128065; Confronta</button>
           <button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>
@@ -508,6 +662,13 @@ function renderApp(){
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <input type="text" id="new-mgr-name" placeholder="Nome" style="width:140px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
           <input type="password" id="new-mgr-pwd" placeholder="Password" style="width:140px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
+          <select id="new-mgr-ruolo" onchange="toggleNewMgrReparto()" style="width:150px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
+            <option value="manager">Manager di reparto</option>
+            <option value="responsabile">Responsabile (tutti)</option>
+          </select>
+          <select id="new-mgr-reparto" style="width:170px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
+            ${Object.keys(REPARTI).map(k=>`<option value="${k}">${REPARTI[k].label}</option>`).join('')}
+          </select>
           <button class="btn primary" onclick="addManager()">+ Aggiungi</button>
         </div>
       </div>
@@ -543,9 +704,15 @@ function renderApp(){
 }
 
 function renderNav(){
-  const tabs=isManager()
-    ?[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['archivio','Archivio'],['managers','Manager']]
-    :[['turni','Turni'],['giornaliero','Giornaliero']];
+  let tabs;
+  if(isResponsabile()){
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['archivio','Archivio'],['managers','Manager']];
+  } else if(isManager()){
+    // Il manager di reparto non gestisce ne' i manager ne' i giorni di apertura
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['archivio','Archivio']];
+  } else {
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero']];
+  }
   document.getElementById('main-nav').innerHTML=tabs.map(([id,label],i)=>`
     <button class="nav-btn ${i===0?'active':''}" onclick="goTab('${id}')">${label}</button>`).join('');
 }
@@ -587,20 +754,25 @@ function doLogin(){
   if(managerId){
     const mgr=G.managers.find(m=>m.id===managerId);
     if(mgr&&mgr.password===pwd){
-      role='manager';currentManager=mgr;renderApp();startPresence();return;
+      // responsabile = accesso a tutti i reparti; manager = solo al suo
+      role=(mgr.ruolo==='responsabile')?'responsabile':'manager';
+      currentManager=mgr;
+      applyReparto(role==='responsabile'?REP_DEFAULT:(mgr.reparto||REP_DEFAULT));
+      renderApp();startPresence();return;
     }
     document.getElementById('pwd-err').style.display='block';return;
   }
   // Fallback: legacy single password
-  if(pwd===G.managerPwd){role='manager';currentManager={id:'admin',name:'Manager'};renderApp();startPresence();}
+  if(pwd===G.managerPwd){role='responsabile';currentManager={id:'admin',name:'Manager'};applyReparto(REP_DEFAULT);renderApp();startPresence();}
   else{document.getElementById('pwd-err').style.display='block';}
 }
 function doLoginDep(){
   const code=document.getElementById('dep-code-input').value.trim();
   if(!code){document.getElementById('dep-err').style.display='block';return;}
-  const p=G.staff.find(s=>s.accessCode&&s.accessCode===code);
+  const p=G.allStaff.find(s=>s.accessCode&&s.accessCode===code);
   if(!p){document.getElementById('dep-err').style.display='block';return;}
-  role='dipendente';renderApp();
+  // Il dipendente vede solo il proprio reparto, in sola lettura
+  role='dipendente';applyReparto(repOf(p));renderApp();
 }
 function logout(){stopPresence();role='';currentManager=null;renderLogin();}
 async function changePwd(){const p=document.getElementById('new-pwd').value.trim();if(!p){alert('Inserisci una password.');return;}G.managerPwd=p;await dbSaveConfig('managerPwd',p);alert('Password aggiornata!');}
@@ -623,6 +795,44 @@ function goTab(t){
   if(t==='settimane')renderWeekList();
   if(t==='archivio')renderArchive();
   if(t==='managers')renderManagers();
+}
+
+// La legenda colori si costruisce dai turni del reparto attivo,
+// non piu' da una lista fissa B/D/M/A/E.
+function colorLegendHtml(){
+  const work=G.shifts.filter(s=>{const u=(s.code||'').toUpperCase();return u!=='OFF'&&u!=='FERIE'&&u!=='MALATTIA'&&!s.is_off&&!s.is_ferie;});
+  const seen=[];
+  work.forEach(s=>{
+    const style=shiftColorStyle(s.code);
+    const m=style.match(/background:([^;]+);/);
+    const bg=m?m[1]:'var(--bg3)';
+    const label=s.color?s.code:(s.code[0]||'').toUpperCase();
+    if(!seen.find(x=>x.label===label))seen.push({label,bg});
+  });
+  return seen.map(x=>`<span class="color-legend-item"><span class="color-dot" style="background:${x.bg};"></span>${x.label}</span>`).join('')
+    +'<span class="color-legend-item"><span class="color-dot" style="background:#111;"></span>OFF/FERIE</span>';
+}
+
+async function switchReparto(r){
+  if(!isResponsabile())return;
+  if(r===REP)return;
+  if(typeof isDirty!=='undefined'&&isDirty){
+    if(!confirm('Hai modifiche non salvate su '+repLabel()+'.\n\nCambiando reparto le perdi. Continuare?')){
+      const sel=document.getElementById('rep-selector');if(sel)sel.value=REP;
+      return;
+    }
+  }
+  // Ricarico sempre dal server prima di passare all'altro reparto:
+  // la settimana e' condivisa e la copia locale puo' contenere dati
+  // dell'altro reparto ormai vecchi, che al salvataggio verrebbero
+  // riscritti sopra il lavoro di chi ci ha messo mano nel frattempo.
+  REP=r;
+  const sel=document.getElementById('rep-selector');if(sel)sel.value=r;
+  const ok=await dbLoad();
+  if(!ok){alert('Non sono riuscito a ricaricare i dati dal server. Riprova.');return;}
+  applyReparto(r);
+  renderApp();
+  markClean();
 }
 
 function renderLegSidebar(filter){
@@ -655,7 +865,7 @@ function renderWeekSelector(){
     if(a.startDate)return -1;if(b.startDate)return 1;
     return 0;
   });
-  sel.innerHTML=sorted.map(w=>`<option value="${w.id}"${w.id===G.currentWeekId?' selected':''}>${w.name}${w.published?' ✓':''}</option>`).join('');
+  sel.innerHTML=sorted.map(w=>`<option value="${w.id}"${w.id===G.currentWeekId?' selected':''}>${w.name}${isPublished(w)?' ✓':''}</option>`).join('');
 }
 function renderDepWeekSelector(){
   if(isManager())return;
@@ -750,8 +960,15 @@ async function deleteWeek(id){
   if(G.currentWeekId===id){G.currentWeekId=G.weeks[0].id;await dbSaveConfig('currentWeekId',G.currentWeekId);}
   renderWeekSelector();renderWeekList();renderTurni();
 }
-async function renameWeek(id,name){const w=G.weeks.find(w=>w.id===id);if(!w)return;w.name=name;await dbSaveWeek(w);renderWeekSelector();}
-async function togglePublish(id){const w=G.weeks.find(w=>w.id===id);if(!w)return;w.published=!w.published;await dbSaveWeek(w);renderWeekList();renderWeekSelector();}
+async function renameWeek(id,name){const w=G.weeks.find(w=>w.id===id);if(!w)return;w.name=name;await dbSaveWeek(w,{changes:['name']});renderWeekSelector();}
+async function togglePublish(id){
+  const w=G.weeks.find(w=>w.id===id);if(!w)return;
+  const nuovo=!isPublished(w,REP);
+  if(!confirm((nuovo?'Pubblicare':'Nascondere')+' i turni di '+repLabel()+' per "'+w.name+'"?\n\nRiguarda solo '+repLabel()+': gli altri reparti restano come sono.'))return;
+  setPublished(w,REP,nuovo);
+  await dbSaveWeek(w);
+  renderWeekList();renderWeekSelector();
+}
 async function dupWeekFrom(id){
   const name=prompt('Nome per la copia:','');if(!name)return;
   const src=G.weeks.find(w=>w.id===id);const w=emptyWeek(name);
@@ -799,10 +1016,11 @@ function renderWeekList(){
       ondragstart="weekDragStart(event,'${w.id}')" ondragover="weekDragOver(event)" ondrop="weekDrop(event,'${w.id}')">
       <span style="color:var(--text3);font-size:16px;cursor:grab;padding:0 6px;">⠿</span>
       <input value="${w.name}" onchange="renameWeek('${w.id}',this.value)" style="flex:1;min-width:100px;border:none;background:transparent;font-size:13px;color:var(--text);padding:0;font-family:inherit;">
-      <span class="pub-badge ${w.published?'yes':'no'}">${w.published?'Pubblicata':'Bozza'}</span>
+      <span class="pub-badge ${isPublished(w)?'yes':'no'}" title="${pubSummary(w)}">${repLabel()}: ${isPublished(w)?'Pubblicata':'Bozza'}</span>
+      ${isResponsabile()?`<span style="font-size:10px;color:var(--text3);white-space:nowrap;">${pubSummary(w)}</span>`:''}
       <div style="display:flex;gap:4px;flex-wrap:wrap;">
         ${w.id!==G.currentWeekId?`<button class="btn" onclick="switchWeek('${w.id}')">Apri</button>`:'<span style="font-size:11px;color:var(--blue-text);padding:0 6px;">Attiva</span>'}
-        <button class="btn ${w.published?'danger':'success'}" onclick="togglePublish('${w.id}')">${w.published?'Nascondi':'Pubblica'}</button>
+        <button class="btn ${isPublished(w)?'danger':'success'}" onclick="togglePublish('${w.id}')">${isPublished(w)?'Nascondi':'Pubblica'} ${repLabel()}</button>
         <button class="btn warn" onclick="dupWeekFrom('${w.id}')">Duplica</button>
         <button class="btn danger" onclick="deleteWeek('${w.id}')">Elimina</button>
       </div>
@@ -1039,7 +1257,7 @@ function setRole(key,val){
 // ===== STAFF =====
 async function addStaff(){
   const n=document.getElementById('sname').value.trim();if(!n)return;
-  G.staff.push({id:'s'+Date.now(),name:n,role:document.getElementById('srole').value.trim(),canDo:[],offRequests:[],workDaysPerWeek:5,accessCode:''});
+  G.staff.push({id:'s'+Date.now(),name:n,role:document.getElementById('srole').value.trim(),reparto:REP,canDo:[],offRequests:[],workDaysPerWeek:5,accessCode:''});
   document.getElementById('sname').value='';document.getElementById('srole').value='';
   await dbSaveStaff();renderStaff();
 }
@@ -1155,7 +1373,7 @@ function renderEquivalenze(){
 function toggleEquiv(gi,code,on){if(!G.equivalenze[gi])return;if(on){if(!G.equivalenze[gi].includes(code))G.equivalenze[gi].push(code);}else{G.equivalenze[gi]=G.equivalenze[gi].filter(c=>c!==code);}renderEquivalenze();}
 function addEquivGroup(){G.equivalenze.push([]);renderEquivalenze();}
 function removeEquivGroup(gi){G.equivalenze.splice(gi,1);renderEquivalenze();}
-async function saveEquivalenze(){await dbSaveConfig('equivalenze',G.equivalenze);alert('Equivalenze salvate!');}
+async function saveEquivalenze(){await dbSaveConfig(configKey('equivalenze'),G.equivalenze);alert('Equivalenze salvate!');}
 
 // ===== REGOLE =====
 function renderRegole(){
@@ -1179,7 +1397,7 @@ function renderRegole(){
 }
 function addRegola(){G.regole.push({absentId:'',requiredId:''});renderRegole();}
 function removeRegola(i){G.regole.splice(i,1);renderRegole();}
-async function saveRegole(){await dbSaveConfig('regole',G.regole);alert('Regole salvate!');}
+async function saveRegole(){await dbSaveConfig(configKey('regole'),G.regole);alert('Regole salvate!');}
 
 // ===== FABBISOGNO =====
 function getFab(fabKey){if(!G.fabbisogno[fabKey])G.fabbisogno[fabKey]={slots:[],maxRiposi:0};return G.fabbisogno[fabKey];}
@@ -1296,7 +1514,7 @@ function dupFabbisogno(srcKey){
   renderFabbisogno();
   alert(`Copiato su "${targets[idx].label}"! Ricordati di salvare.`);
 }
-async function saveFabbisogno(){await dbSaveConfig('fabbisogno',G.fabbisogno);alert('Fabbisogno salvato!');}
+async function saveFabbisogno(){await dbSaveConfig(configKey('fabbisogno'),G.fabbisogno);alert('Fabbisogno salvato!');}
 
 // ===== GENERA BOZZA =====
 function generaBozza(){
@@ -1572,7 +1790,8 @@ function renderConfig(){
 async function saveConfig(){
   const wk=curWeek();
   DAY_NAMES.forEach((_,i)=>{const v=document.querySelector(`input[name="d${i}"]:checked`);if(v)wk.day_config[i]=v.value;});
-  await dbSaveWeek(wk);alert('Configurazione salvata!');
+  if(!confirm('I giorni di apertura valgono per TUTTI i reparti.\n\nLa modifica sara\' visibile anche a '+Object.keys(REPARTI).filter(k=>k!==REP).map(k=>REPARTI[k].label).join(', ')+'.\n\nConfermi?'))return;
+  await dbSaveWeek(wk,{changes:['day_config']});alert('Configurazione salvata per tutti i reparti!');
 }
 
 
@@ -1719,7 +1938,7 @@ function toggleRuleExclDay(ri,di){
 }
 function addRoleRule(){G.roleRules.push({condType:'present',condPersonId:'',targetPersonId:'',targetRole:'',excludeDays:[]});renderRoleRules();}
 function removeRoleRule(i){G.roleRules.splice(i,1);renderRoleRules();}
-async function saveRoleRules(){await dbSaveConfig('roleRules',G.roleRules);alert('Regole ruolo salvate!');}
+async function saveRoleRules(){await dbSaveConfig(configKey('roleRules'),G.roleRules);alert('Regole ruolo salvate!');}
 
 // ===== RUOLI PREFERITI IN STAFF =====
 async function setPrefRole(pid,fasciaId,type,val){
@@ -1775,7 +1994,7 @@ function togglePosExclDay(ri,di){
 }
 function addPosRule(){G.posRules.push({personA:'',personB:'',type:'different',excludeDays:[]});renderPosRules();}
 function removePosRule(i){G.posRules.splice(i,1);renderPosRules();}
-async function savePosRules(){await dbSaveConfig('posRules',G.posRules);alert('Regole posizionamento salvate!');}
+async function savePosRules(){await dbSaveConfig(configKey('posRules'),G.posRules);alert('Regole posizionamento salvate!');}
 
 // Apply posRules when compiling roles auto
 function applyPosRules(wk,di,tipo,roleAssign){
@@ -2039,7 +2258,15 @@ function renderManagers(){
   if(!G.managers.length){el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessun manager.</p>';return;}
   el.innerHTML=G.managers.map(m=>`
     <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:6px;flex-wrap:wrap;">
-      <span style="font-weight:500;flex:1;">${m.name}</span>
+      <span style="font-weight:500;min-width:110px;">${m.name}</span>
+      <select id="ruolo-${m.id}" onchange="changeManagerAccess('${m.id}')" style="width:150px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
+        <option value="manager"${m.ruolo!=='responsabile'?' selected':''}>Manager di reparto</option>
+        <option value="responsabile"${m.ruolo==='responsabile'?' selected':''}>Responsabile (tutti)</option>
+      </select>
+      <select id="reparto-${m.id}" onchange="changeManagerAccess('${m.id}')" ${m.ruolo==='responsabile'?'disabled':''} style="width:170px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;${m.ruolo==='responsabile'?'opacity:0.4;':''}">
+        ${Object.keys(REPARTI).map(k=>`<option value="${k}"${(m.reparto||REP_DEFAULT)===k?' selected':''}>${REPARTI[k].label}</option>`).join('')}
+      </select>
+      <span style="flex:1;"></span>
       <input type="password" placeholder="Nuova password" id="pwd-${m.id}"
         style="width:160px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-size:12px;font-family:inherit;">
       <button class="btn primary" style="font-size:11px;padding:4px 10px;" onclick="changeManagerPwd('${m.id}')">Cambia password</button>
@@ -2055,16 +2282,58 @@ async function changeManagerPwd(mid){
   inp.value='';
   alert('Password aggiornata!');
 }
+function toggleNewMgrReparto(){
+  const r=document.getElementById('new-mgr-ruolo');
+  const rep=document.getElementById('new-mgr-reparto');
+  if(!r||!rep)return;
+  const isResp=r.value==='responsabile';
+  rep.disabled=isResp;
+  rep.style.opacity=isResp?'0.4':'1';
+}
 async function addManager(){
   const nameEl=document.getElementById('new-mgr-name');
   const pwdEl=document.getElementById('new-mgr-pwd');
+  const ruoloEl=document.getElementById('new-mgr-ruolo');
+  const repEl=document.getElementById('new-mgr-reparto');
   if(!nameEl.value.trim()||!pwdEl.value.trim()){alert('Inserisci nome e password.');return;}
-  const newMgr={id:'m'+Date.now(),name:nameEl.value.trim(),password:pwdEl.value.trim()};
+  const ruolo=ruoloEl?ruoloEl.value:'manager';
+  const newMgr={
+    id:'m'+Date.now(),
+    name:nameEl.value.trim(),
+    password:pwdEl.value.trim(),
+    ruolo:ruolo,
+    reparto:ruolo==='responsabile'?null:(repEl?repEl.value:REP_DEFAULT)
+  };
   await sb.from('managers').insert(newMgr);
   G.managers.push(newMgr);
   nameEl.value='';pwdEl.value='';
   renderManagers();
-  alert('Manager aggiunto!');
+  alert(newMgr.ruolo==='responsabile'
+    ? 'Responsabile aggiunto: vedra\' tutti i reparti.'
+    : 'Manager aggiunto: vedra\' solo '+repLabel(newMgr.reparto)+'.');
+}
+async function changeManagerAccess(mid){
+  const m=G.managers.find(x=>x.id===mid);if(!m)return;
+  const ruoloEl=document.getElementById('ruolo-'+mid);
+  const repEl=document.getElementById('reparto-'+mid);
+  if(!ruoloEl||!repEl)return;
+  const ruolo=ruoloEl.value;
+  const reparto=ruolo==='responsabile'?null:repEl.value;
+  const descrizione=ruolo==='responsabile'
+    ? 'responsabile, con accesso a tutti i reparti'
+    : 'manager di '+repLabel(reparto)+', senza accesso agli altri reparti';
+  if(!confirm('Rendere '+m.name+' '+descrizione+'?')){renderManagers();return;}
+  const {error}=await sb.from('managers').update({ruolo:ruolo,reparto:reparto}).eq('id',mid);
+  if(error){alert('Non sono riuscito a salvare la modifica. Riprova.');renderManagers();return;}
+  m.ruolo=ruolo;m.reparto=reparto;
+  renderManagers();
+  // Se ho cambiato i permessi a me stessa, applico subito
+  if(currentManager&&currentManager.id===mid){
+    currentManager=m;
+    role=(ruolo==='responsabile')?'responsabile':'manager';
+    if(role==='manager')applyReparto(m.reparto||REP_DEFAULT);
+    renderApp();
+  }
 }
 async function deleteManager(mid,name){
   if(!confirm(`Rimuovere il manager "${name}"?`))return;
@@ -2120,7 +2389,7 @@ function stopPresence(){
 // ===== EXPORT PDF =====
 function exportPDF(){
   const wk=curWeek();if(!wk)return;
-  if(!confirm('Esportare i turni e il giornaliero della settimana "'+wk.name+'" in PDF?'))return;
+  if(!confirm('Esportare i turni e il giornaliero di '+repLabel()+' per la settimana "'+wk.name+'" in PDF?'))return;
   const days=DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:wk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
   const weekDates=getWeekDates(wk);
   let cols=[];
