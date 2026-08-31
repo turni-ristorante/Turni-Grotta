@@ -192,9 +192,18 @@ const REPARTI={
     id:'cucina',
     label:'Cucina & Pizzeria',
     roles:['TAPAS / DESSERT','PRIMI','SECONDI','IMPIATTAMENTO','PASS','PIZZERIA','PLONGE'],
+    // In cucina i codici turno hanno sfondo chiaro e scritta nera
+    textColor:'#111',
+    // ATTENZIONE: "tipo" non indica l'ora, indica in quali giornate
+    // la fascia compare. Le fasce 'pranzo' spariscono nei giorni di
+    // sola cena; quelle 'cena' compaiono sempre.
+    // Scarichi e Pomeriggio sono marcati 'cena' proprio per questo:
+    // ci sono anche quando il locale apre solo la sera.
     fasce:[
-      {id:0,label:'PRANZO',orario:'12:00/15:30',tipo:'pranzo'},
-      {id:1,label:'CENA',orario:'19:00/00:30',tipo:'cena'},
+      {id:0,label:'SCARICHI',   orario:'09:00/11:00',tipo:'cena'},
+      {id:1,label:'PRANZO',     orario:'11:00/15:30',tipo:'pranzo'},
+      {id:2,label:'POMERIGGIO', orario:'15:30/18:30',tipo:'cena'},
+      {id:3,label:'CENA',       orario:'18:30/00:30',tipo:'cena'},
     ]
   }
 };
@@ -210,20 +219,36 @@ function repOf(x){return (x&&x.reparto)?x.reparto:REP_DEFAULT;}
 // dei dati esistenti. Gli altri reparti usano una chiave suffissata.
 function configKey(base,r){const rr=r||REP;return rr===REP_DEFAULT?base:base+'__'+rr;}
 
+// Colore del testo di un codice turno. Ordine di priorita':
+// 1) textColor scritto sul turno, 2) textColor del reparto,
+// 3) bianco sui fondi scuri predefiniti della sala.
+function shiftTextColor(code){
+  const u=(code||'').toUpperCase();
+  if(u==='OFF'||u==='FERIE'||u==='MALATTIA')return'#fff';
+  const sh=getShift(code);
+  if(sh&&sh.textColor)return sh.textColor;
+  const def=repDef();
+  if(def.textColor)return def.textColor;
+  if(sh&&sh.color)return'#fff';
+  const l=u[0];
+  if(l==='B'||l==='D'||l==='M'||l==='A'||l==='E')return'#fff';
+  return'var(--text)';
+}
 function shiftColorStyle(code){
   if(!code)return'';
   const u=code.toUpperCase();
   if(u==='OFF'||u==='FERIE'||u==='MALATTIA')return'background:#111;color:#fff;';
+  const txt=shiftTextColor(code);
   // Se il turno ha un colore esplicito vince su quello dedotto dalla lettera
   const sh=getShift(code);
-  if(sh&&sh.color)return'background:'+sh.color+';color:#fff;';
+  if(sh&&sh.color)return'background:'+sh.color+';color:'+txt+';';
   const l=u[0];
-  if(l==='B')return'background:#1a56db;color:#fff;';
-  if(l==='D')return'background:#e65100;color:#fff;';
-  if(l==='M')return'background:#6b7280;color:#fff;';
-  if(l==='A')return'background:#c026d3;color:#fff;';
-  if(l==='E')return'background:#dc2626;color:#fff;';
-  return'background:var(--bg3);color:var(--text);';
+  if(l==='B')return'background:#1a56db;color:'+txt+';';
+  if(l==='D')return'background:#e65100;color:'+txt+';';
+  if(l==='M')return'background:#6b7280;color:'+txt+';';
+  if(l==='A')return'background:#c026d3;color:'+txt+';';
+  if(l==='E')return'background:#dc2626;color:'+txt+';';
+  return'background:var(--bg3);color:'+txt+';';
 }
 
 const DEF_SHIFTS=[
@@ -286,9 +311,10 @@ const DEF_SHIFTS=[
 const DEF_SHIFTS_CUCINA=[
   {code:'OFF',s1:'',e1:'',s2:'',e2:'',is_off:true,is_ferie:false,fasce:[]},
   {code:'FERIE',s1:'',e1:'',s2:'',e2:'',is_off:false,is_ferie:true,fasce:[]},
-  {code:'P',s1:'11:00',e1:'15:30',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[0],color:'#0f766e'},
-  {code:'C',s1:'',e1:'',s2:'18:00',e2:'00:30',is_off:false,is_ferie:false,fasce:[1],color:'#7c3aed'},
-  {code:'PC',s1:'11:00',e1:'15:30',s2:'18:00',e2:'00:30',is_off:false,is_ferie:false,fasce:[0,1],color:'#b45309'},
+  {code:'S', s1:'09:00',e1:'11:00',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[0],color:'#e2e8f0'},
+  {code:'P', s1:'11:00',e1:'15:30',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[1],color:'#a7f3d0'},
+  {code:'C', s1:'',e1:'',s2:'18:30',e2:'00:30',is_off:false,is_ferie:false,fasce:[3],color:'#ddd6fe'},
+  {code:'PC',s1:'11:00',e1:'15:30',s2:'18:30',e2:'00:30',is_off:false,is_ferie:false,fasce:[1,3],color:'#fde68a'},
 ];
 
 let G={staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
@@ -1131,7 +1157,7 @@ function renderTurni(){
       const sKey=c.servizio==='pranzo'?`${c.idx},'${p.id}','pranzo'`:c.servizio==='cena'?`${c.idx},'${p.id}','cena'`:`${c.idx},'${p.id}',null`;
       if(isManager()){
         h+=`<td class="shift-cell" style="${cs}${!val&&hasOffReq?'background:#fff8dd;':''}" title="${hasOffReq?'Richiesta giorno libero':''}">
-          <select onchange="setShift(${sKey},this.value)" style="width:66px;font-size:11px;padding:2px 3px;border:none;background:transparent;color:${val?'#fff':'var(--text)'};font-family:inherit;font-weight:${val?'600':'400'};">
+          <select onchange="setShift(${sKey},this.value)" style="width:66px;font-size:11px;padding:2px 3px;border:none;background:transparent;color:${val?shiftTextColor(val):'var(--text)'};font-family:inherit;font-weight:${val?'600':'400'};">
             <option value="" style="background:#fff;color:#1a1a1a;"></option>
             ${G.shifts.map(sh=>`<option value="${sh.code}" style="background:#fff;color:#1a1a1a;"${sh.code===val?' selected':''}>${sh.code}</option>`).join('')}
           </select></td>`;
