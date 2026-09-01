@@ -1039,6 +1039,64 @@ async function dupWeekFrom(id){
   await sb.from('weeks').insert(weekToDb(w));await dbSaveConfig('currentWeekId',w.id);
   renderWeekSelector();renderWeekList();renderTurni();
 }
+
+async function copyTurniSu(srcId){
+  // Let user pick a destination week (excluding the source)
+  const src=G.weeks.find(w=>w.id===srcId);if(!src)return;
+  const others=G.weeks.filter(w=>w.id!==srcId);
+  if(!others.length){alert('Non ci sono altre settimane su cui copiare.');return;}
+  const msg='Copia i turni '+REP+' di "'+src.name+'" su quale settimana?\n\n'+
+    others.map((w,i)=>`${i+1}. ${w.name}`).join('\n')+'\n\nInserisci il numero:';
+  const ans=prompt(msg);if(!ans)return;
+  const idx=parseInt(ans)-1;
+  if(isNaN(idx)||idx<0||idx>=others.length){alert('Numero non valido.');return;}
+  const dest=others[idx];
+  if(!confirm('Copiare i turni '+REP+' da "'+src.name+'" a "'+dest.name+'"?\nI turni '+REP+' esistenti in quella settimana verranno sovrascritti.'))return;
+
+  // Copy only the keys belonging to this reparto's staff
+  const myStaffIds=new Set(G.staff.map(s=>s.id));
+
+  // Merge shift_assign: copy only my staff's keys
+  const newShiftAssign=JSON.parse(JSON.stringify(dest.shift_assign||{}));
+  Object.entries(src.shift_assign||{}).forEach(([di,assigns])=>{
+    if(!newShiftAssign[di])newShiftAssign[di]={};
+    Object.entries(assigns).forEach(([key,val])=>{
+      // key is pid, pid_P or pid_C
+      const pid=key.replace(/_P$/,'').replace(/_C$/,'');
+      if(myStaffIds.has(pid))newShiftAssign[di][key]=val;
+    });
+  });
+  // Also remove my staff's old keys that aren't in the source
+  Object.keys(dest.shift_assign||{}).forEach(di=>{
+    Object.keys(dest.shift_assign[di]||{}).forEach(key=>{
+      const pid=key.replace(/_P$/,'').replace(/_C$/,'');
+      if(myStaffIds.has(pid)&&!(src.shift_assign[di]&&src.shift_assign[di][key]!==undefined))
+        delete newShiftAssign[di][key];
+    });
+  });
+
+  // Merge role_assign: copy only my staff's keys
+  const newRoleAssign=JSON.parse(JSON.stringify(dest.role_assign||{}));
+  Object.entries(src.role_assign||{}).forEach(([key,val])=>{
+    // key is dayIdx_fasciaId_staffId
+    const parts=key.split('_');
+    const pid=parts[parts.length-1];
+    if(myStaffIds.has(pid))newRoleAssign[key]=val;
+  });
+  // Remove my staff's old role keys not in source
+  Object.keys(dest.role_assign||{}).forEach(key=>{
+    const parts=key.split('_');
+    const pid=parts[parts.length-1];
+    if(myStaffIds.has(pid)&&src.role_assign[key]===undefined)
+      delete newRoleAssign[key];
+  });
+
+  dest.shift_assign=newShiftAssign;
+  dest.role_assign=newRoleAssign;
+  await dbSaveWeek(dest);
+  alert('Turni '+REP+' copiati su "'+dest.name+'" con successo!');
+  renderWeekList();
+}
 let weekListOrder=null;// manual order (array of ids), null = auto chronological
 function getWeeksSorted(){
   if(weekListOrder&&weekListOrder.length){
@@ -1083,6 +1141,7 @@ function renderWeekList(){
         ${w.id!==G.currentWeekId?`<button class="btn" onclick="switchWeek('${w.id}')">Apri</button>`:'<span style="font-size:11px;color:var(--blue-text);padding:0 6px;">Attiva</span>'}
         <button class="btn ${isPublished(w)?'danger':'success'}" onclick="togglePublish('${w.id}')">${isPublished(w)?'Nascondi':'Pubblica'} ${repLabel()}</button>
         <button class="btn warn" onclick="dupWeekFrom('${w.id}')">Duplica</button>
+        <button class="btn primary" style="font-size:11px;" onclick="copyTurniSu('${w.id}')">Copia turni su...</button>
         <button class="btn danger" onclick="deleteWeek('${w.id}')">Elimina</button>
       </div>
     </div>`).join('');
