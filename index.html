@@ -191,7 +191,7 @@ const REPARTI={
   cucina:{
     id:'cucina',
     label:'Cucina & Pizzeria',
-    roles:['TAPAS / DESSERT','PRIMI','SECONDI','IMPIATTAMENTO','PASS','PIZZERIA','PLONGE'],
+    roles:['TAPAS / DESSERT','PRIMI','SECONDI','IMPIATTAMENTO','PASS','PIZZERIA','PLONGE','SCARICHI'],
     // In cucina i codici turno hanno sfondo chiaro e scritta nera
     textColor:'#111',
     // Il colore non dipende dal codice ma dalla FORMA del turno:
@@ -1203,12 +1203,32 @@ function renderTurni(){
     h+='</tr>';
   });
   if(isManager()){
-    h+='<tr class="count-row"><td class="scol" style="background:var(--bg3);">N. operatori</td>';
-    cols.forEach(c=>{
-      const n=G.staff.filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);return code&&!isFuoriServizio(code);}).length;
-      h+=`<td>${n||''}</td>`;
-    });
-    h+='</tr>';
+    if(REP==='cucina'){
+      // Three separate count rows for cucina/pizzeria/plonge
+      const groups=[
+        {label:'N. cucina', prefix:'C'},
+        {label:'N. pizzeria', prefix:'P'},
+        {label:'N. plonge', prefix:'L'},
+      ];
+      groups.forEach(g=>{
+        h+=`<tr class="count-row"><td class="scol" style="background:var(--bg3);">${g.label}</td>`;
+        cols.forEach(c=>{
+          const n=G.staff.filter(p=>{
+            const code=getShiftCode(wk,c.idx,p.id,c.servizio);
+            return code&&!isFuoriServizio(code)&&code.toUpperCase().startsWith(g.prefix);
+          }).length;
+          h+=`<td>${n||''}</td>`;
+        });
+        h+='</tr>';
+      });
+    } else {
+      h+='<tr class="count-row"><td class="scol" style="background:var(--bg3);">N. operatori</td>';
+      cols.forEach(c=>{
+        const n=G.staff.filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);return code&&!isFuoriServizio(code);}).length;
+        h+=`<td>${n||''}</td>`;
+      });
+      h+='</tr>';
+    }
   }
   h+='</tbody></table>';
   wrap.innerHTML=h;
