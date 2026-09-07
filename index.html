@@ -1430,6 +1430,54 @@ function renderStaff(){
 }
 function selectStaff(id){selectedStaffId=selectedStaffId===id?null:id;renderStaff();}
 
+function renderStaffDetail(){
+  const panel=document.getElementById('staff-detail-inline')||document.getElementById('staff-detail-panel');if(!panel)return;
+  if(!selectedStaffId){panel.innerHTML='';return;}
+  const p=G.staff.find(s=>s.id===selectedStaffId);if(!p){panel.innerHTML='';return;}
+  const extra=isExtra(p);
+  const workShifts=G.shifts.filter(s=>!s.is_off&&!s.is_ferie);
+  panel.innerHTML=`
+    <div class="staff-detail">
+      <h4>Modifica: ${p.name}</h4>
+      <div style="display:flex;gap:10px;margin-bottom:1rem;flex-wrap:wrap;align-items:flex-end;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text2);">Nome</label>
+          <input type="text" value="${p.name}" id="edit-name-${p.id}" style="padding:6px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;width:160px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text2);">Ruolo (scrivi EXTRA per gli extra)</label>
+          <input type="text" value="${p.role||''}" id="edit-role-${p.id}" style="padding:6px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;width:200px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text2);">Codice accesso dipendente</label>
+          <input type="text" value="${p.accessCode||''}" id="edit-code-${p.id}" placeholder="es. 1234 o vuoto = bloccato" style="padding:6px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;width:180px;">
+        </div>
+        <button class="btn primary" onclick="saveStaffInfo('${p.id}')">Salva nome/ruolo</button>
+      </div>
+      ${extra?`<p style="font-size:12px;color:var(--text2);padding:8px 12px;background:var(--yellow-bg);border-radius:var(--radius);border:0.5px solid var(--yellow-border);">Ruolo EXTRA — ignorato dalla bozza automatica.</p>`:`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;margin-top:0.5rem;">
+        <label style="font-size:12px;font-weight:500;color:var(--text2);">Giorni lavorativi a settimana:</label>
+        <input type="number" min="1" max="7" value="${p.workDaysPerWeek||5}" onchange="setWorkDays('${p.id}',this.value)" style="width:60px;padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;">
+      </div>
+      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;">Turni che può fare</p>
+      <div class="cb-grid">
+        ${workShifts.map(s=>{const checked=(p.canDo||[]).includes(s.code);return`<label class="cb-pill ${checked?'checked':''}" style="${checked?shiftColorStyle(s.code):''}"><input type="checkbox" style="display:none;" ${checked?'checked':''} onchange="toggleCanDo('${p.id}','${s.code}',this.checked)">${s.code}</label>`;}).join('')}
+      </div>
+      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:12px;">Giorni liberi preferiti (non tassativi)</p>
+      <div class="day-check-grid">
+        ${DAY_NAMES.map((n,i)=>{const checked=(p.offRequests||[]).includes(i);return`<label class="cb-pill ${checked?'checked':''}"><input type="checkbox" ${checked?'checked':''} onchange="toggleOffReq('${p.id}',${i},this.checked)">${n}</label>`;}).join('')}
+      </div>
+      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:12px;">Ruolo preferito per fascia</p>
+      <div class="pref-roles-grid">
+        ${ALL_FASCE.map(f=>{const pref=(p.preferredRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label}</label><select onchange="setPrefRole('${p.id}',${f.id},'pref',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===pref?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
+      </div>
+      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:8px;">Ruolo secondario per fascia (se il preferito è già coperto)</p>
+      <div class="pref-roles-grid">
+        ${ALL_FASCE.map(f=>{const sec=(p.secondaryRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label}</label><select onchange="setPrefRole('${p.id}',${f.id},'sec',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===sec?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
+      </div>`}
+    </div>`;
+}
+
 async function saveStaffInfo(pid){
   const p=G.staff.find(s=>s.id===pid);if(!p)return;
   const nameEl=document.getElementById('edit-name-'+pid);
