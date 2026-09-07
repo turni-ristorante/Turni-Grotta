@@ -761,7 +761,7 @@ function renderNav(){
     tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
   } else if(isManager()){
     // Il manager di reparto non gestisce ne' i manager ne' i giorni di apertura
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['archivio','Archivio']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
   } else {
     tabs=[['turni','Turni'],['giornaliero','Giornaliero']];
   }
@@ -1240,9 +1240,15 @@ function renderTurni(){
     }
   });
   h+='</tr></thead><tbody>';
-  G.staff.forEach(p=>{
+  // Use allStaff (includes inactive) to show historical shifts correctly
+  const staffPerTurni=G.allStaff.filter(s=>repOf(s)===REP);
+  staffPerTurni.forEach(p=>{
+    // Check if this person has any shift in this week — if inactive and no shifts, skip
+    const hasShift=!cols.every(c=>!getShiftCode(wk,c.idx,p.id,c.servizio));
+    const isInactive=p.attivo===false;
+    if(isInactive&&!hasShift)return;// hide inactive with no shifts
     const extra=isExtra(p);
-    h+=`<tr><td class="scol">${p.name}${isManager()&&p.role?`<br><span style="font-size:10px;font-weight:400;color:var(--text2);">${p.role}</span>`:''}${isManager()&&!extra?` <br><span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett</span>`:''}</td>`;
+    h+=`<tr${isInactive?' style="opacity:0.6;"':''}><td class="scol">${p.name}${isInactive?'<span style="font-size:9px;color:var(--text3);margin-left:4px;">(archiviato)</span>':''}${isManager()&&p.role?`<br><span style="font-size:10px;font-weight:400;color:var(--text2);">${p.role}</span>`:''}${isManager()&&!extra&&!isInactive?` <br><span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett</span>`:''}</td>`;
     cols.forEach(c=>{
       const val=getShiftCode(wk,c.idx,p.id,c.servizio);
       const cs=val?shiftColorStyle(val):'';
@@ -1336,10 +1342,15 @@ function renderDayContent(){
   }
   h+='<th style="background:var(--bg3);font-size:11px;padding:5px 8px;min-width:110px;">ORARI</th>';
   h+='</tr></thead><tbody>';
-  G.staff.forEach(p=>{
+  const staffPerGiorno=G.allStaff.filter(s=>repOf(s)===REP);
+  staffPerGiorno.forEach(p=>{
     const cp=tipo==='pranzo_cena'?getShiftCode(wk,di,p.id,'pranzo'):'';
     const cc=tipo==='pranzo_cena'?getShiftCode(wk,di,p.id,'cena'):getShiftCode(wk,di,p.id,null);
-    h+=`<tr><td class="scol" style="font-size:12px;">${p.name}${isManager()&&isExtra(p)?'<span class="extra-badge">Extra</span>':''}</td>`;
+    // Skip inactive staff with no shifts today
+    const isInactive=p.attivo===false;
+    const hasShiftToday=cp||cc;
+    if(isInactive&&!hasShiftToday)return;
+    h+=`<tr${isInactive?' style="opacity:0.6;"':''}><td class="scol" style="font-size:12px;">${p.name}${isInactive?'<span style="font-size:9px;color:var(--text3);margin-left:4px;">(arch.)</span>':''}${isManager()&&isExtra(p)?'<span class="extra-badge">Extra</span>':''}</td>`;
     fasce.forEach(f=>{
       const working=personInFascia(wk,di,p.id,f,tipo);
       if(!working){h+=`<td class="xc">X</td>`;}
