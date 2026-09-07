@@ -388,7 +388,7 @@ async function dbLoad(){
       if(r.key==='currentWeekId')G.currentWeekId=r.value;
     });}
     const {data:staff}=await sb.from('staff').select('*');
-    G.allStaff=(staff||[]).map(s=>({...s,reparto:s.reparto||REP_DEFAULT,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);
+    G.allStaff=(staff||[]).map(s=>({...s,reparto:s.reparto||REP_DEFAULT,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999,attivo:s.attivo!==false})).filter(s=>s.attivo!==false).sort((a,b)=>a.sort_order-b.sort_order);
     const {data:shifts}=await sb.from('shifts').select('*');
     let seedShifts=false;
     if(shifts&&shifts.length>0){G.allShifts=shifts.map(s=>({...s,reparto:s.reparto||REP_DEFAULT,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[],sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);}
@@ -540,21 +540,13 @@ async function dbSaveShifts(){
 }
 async function dbSaveStaff(){
   try{
-    // Come sopra: la delete e' ristretta al reparto corrente, altrimenti
-    // un manager cancellerebbe l'anagrafica dell'altro reparto.
-    const rows=G.staff.map((s,i)=>({id:s.id,name:s.name,role:s.role,reparto:REP,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:i}));
-    if(rows.length){
-      await sb.from('staff').upsert(rows,{onConflict:'id'});
-      const ids=rows.map(s=>s.id);
-      await sb.from('staff').delete().eq('reparto',REP).not('id','in',`(${ids.map(id=>`"${id}"`).join(',')})`);
-    } else {
-      await sb.from('staff').delete().eq('reparto',REP);
-    }
-    G.staff=G.staff.map((s,i)=>({...s,reparto:REP,sort_order:i}));
-    G.allStaff=G.allStaff.filter(s=>repOf(s)!==REP).concat(G.staff);
+    // NEVER delete staff — use attivo:false to preserve history
+    const rows=G.staff.map((s,i)=>({id:s.id,name:s.name,role:s.role,reparto:REP,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:i,attivo:true}));
+    if(rows.length)await sb.from('staff').upsert(rows,{onConflict:'id'});
     setSyncStatus('ok');
   }catch(e){console.error('dbSaveStaff error:',e);setSyncStatus('err');}
 }
+
 async function dbSaveConfig(k,v){try{const val=typeof v==='string'?v:JSON.stringify(v);await sb.from('config').upsert({key:k,value:val});const row=G.rawConfig.find(x=>x.key===k);if(row)row.value=val;else G.rawConfig.push({key:k,value:val});setSyncStatus('ok');}catch(e){setSyncStatus('err');}}
 function setSyncStatus(s){syncStatus=s;const el=document.getElementById('sync-status');if(el){el.textContent=s==='ok'?'● Sincronizzato':'● Errore';el.className='sync-status '+(s==='ok'?'ok':'err');}}
 function emptyWeek(name){return{id:'w'+Date.now()+Math.random().toString(36).slice(2,6),name:name||'Nuova settimana',published:false,published_rep:{},day_config:['cena','cena','cena','cena','cena','cena','cena'],shift_assign:{},role_assign:{},selected_day:0};}
@@ -1402,82 +1394,17 @@ async function addStaff(){
   await dbSaveStaff();renderStaff();
 }
 async function removeStaff(id){
-  if(!confirm('Rimuovere questo dipendente?'))return;
-  G.staff=G.staff.filter(s=>s.id!==id);
-  if(selectedStaffId===id)selectedStaffId=null;
-  await dbSaveStaff();renderStaff();
+  if(!confirm('Rimuovere questo dipendente dalla lista attiva?\nResterà visibile nell\'archivio storico dei turni.'))return;
+  try{
+    await sb.from('staff').update({attivo:false}).eq('id',id);
+    G.staff=G.staff.filter(s=>s.id!==id);
+    if(selectedStaffId===id)selectedStaffId=null;
+    applyReparto();
+    renderStaff();
+    setSyncStatus('ok');
+  }catch(e){console.error('removeStaff error:',e);setSyncStatus('err');}
 }
-function renderStaff(){
-  const el=document.getElementById('staff-list');if(!el)return;
-  if(!G.staff.length){el.innerHTML='<p style="color:var(--text2);font-size:12px;">Nessun dipendente.</p>';return;}
-  let html='';
-  G.staff.forEach((p,i)=>{
-    const extra=isExtra(p);
-    html+=`<div class="staff-row ${selectedStaffId===p.id?'drag-over':''}" draggable="true" data-idx="${i}"
-      ondragstart="dragStart(event,${i})" ondragover="dragOver(event,${i})" ondrop="dragDrop(event,${i})" ondragend="dragEnd()"
-      onclick="selectStaff('${p.id}')">
-      <span class="drag-handle">⠿</span>
-      <span style="font-weight:500;flex:1;">${p.name}</span>
-      ${p.role?`<span style="color:var(--text2);font-size:11px;">${p.role}</span>`:''}
-      ${extra?'<span class="extra-badge">Extra</span>':`<span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett</span>`}
-      <button class="btn danger" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();removeStaff('${p.id}')">Rimuovi</button>
-    </div>`;
-    if(selectedStaffId===p.id){
-      html+='<div id="staff-detail-inline" style="margin:0 0 8px 0;"></div>';
-    }
-  });
-  el.innerHTML=html;
-  const old=document.getElementById('staff-detail-panel');if(old)old.innerHTML='';
-  renderStaffDetail();
-}
-function selectStaff(id){selectedStaffId=selectedStaffId===id?null:id;renderStaff();}
-function renderStaffDetail(){
-  const panel=document.getElementById('staff-detail-inline')||document.getElementById('staff-detail-panel');if(!panel)return;
-  if(!selectedStaffId){panel.innerHTML='';return;}
-  const p=G.staff.find(s=>s.id===selectedStaffId);if(!p){panel.innerHTML='';return;}
-  const extra=isExtra(p);
-  const workShifts=G.shifts.filter(s=>!s.is_off&&!s.is_ferie);
-  panel.innerHTML=`
-    <div class="staff-detail">
-      <h4>Modifica: ${p.name}</h4>
-      <div style="display:flex;gap:10px;margin-bottom:1rem;flex-wrap:wrap;align-items:flex-end;">
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <label style="font-size:11px;color:var(--text2);">Nome</label>
-          <input type="text" value="${p.name}" id="edit-name-${p.id}" style="padding:6px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;width:160px;">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <label style="font-size:11px;color:var(--text2);">Ruolo (scrivi EXTRA per gli extra)</label>
-          <input type="text" value="${p.role||''}" id="edit-role-${p.id}" style="padding:6px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;width:200px;">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <label style="font-size:11px;color:var(--text2);">Codice accesso dipendente</label>
-          <input type="text" value="${p.accessCode||''}" id="edit-code-${p.id}" placeholder="es. 1234 o vuoto = bloccato" style="padding:6px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;width:180px;">
-        </div>
-        <button class="btn primary" onclick="saveStaffInfo('${p.id}')">Salva nome/ruolo</button>
-      </div>
-      ${extra?`<p style="font-size:12px;color:var(--text2);padding:8px 12px;background:var(--yellow-bg);border-radius:var(--radius);border:0.5px solid var(--yellow-border);">Ruolo EXTRA — ignorato dalla bozza automatica.</p>`:`
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;margin-top:0.5rem;">
-        <label style="font-size:12px;font-weight:500;color:var(--text2);">Giorni lavorativi a settimana:</label>
-        <input type="number" min="1" max="7" value="${p.workDaysPerWeek||5}" onchange="setWorkDays('${p.id}',this.value)" style="width:60px;padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;">
-      </div>
-      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;">Turni che può fare</p>
-      <div class="cb-grid">
-        ${workShifts.map(s=>{const checked=(p.canDo||[]).includes(s.code);return`<label class="cb-pill ${checked?'checked':''}" style="${checked?shiftColorStyle(s.code):''}"><input type="checkbox" style="display:none;" ${checked?'checked':''} onchange="toggleCanDo('${p.id}','${s.code}',this.checked)">${s.code}</label>`;}).join('')}
-      </div>
-      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:12px;">Giorni liberi preferiti (non tassativi)</p>
-      <div class="day-check-grid">
-        ${DAY_NAMES.map((n,i)=>{const checked=(p.offRequests||[]).includes(i);return`<label class="cb-pill ${checked?'checked':''}"><input type="checkbox" ${checked?'checked':''} onchange="toggleOffReq('${p.id}',${i},this.checked)">${n}</label>`;}).join('')}
-      </div>
-      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:12px;">Ruolo preferito per fascia</p>
-      <div class="pref-roles-grid">
-        ${ALL_FASCE.map(f=>{const pref=(p.preferredRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label}</label><select onchange="setPrefRole('${p.id}',${f.id},'pref',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===pref?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
-      </div>
-      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:8px;">Ruolo secondario per fascia (se il preferito è già coperto)</p>
-      <div class="pref-roles-grid">
-        ${ALL_FASCE.map(f=>{const sec=(p.secondaryRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label}</label><select onchange="setPrefRole('${p.id}',${f.id},'sec',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===sec?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
-      </div>`}
-    </div>`;
-}
+
 async function saveStaffInfo(pid){
   const p=G.staff.find(s=>s.id===pid);if(!p)return;
   const nameEl=document.getElementById('edit-name-'+pid);
@@ -1714,6 +1641,16 @@ function generaBozza(){
     return G.shifts.filter(s=>!isFuoriServizio(s.code)&&(s.compatibleRoles||[]).includes(role)).map(s=>s.code);
   }
 
+  // Returns true if a shift covers at least one fascia of the given servizio
+  function shiftMatchesServizio(code, servizio){
+    if(!servizio)return true;// no filter needed for full-day sessions
+    const s=getShift(code);if(!s||isFuoriServizio(code))return false;
+    const validFasceIds=servizio==='pranzo'
+      ? ALL_FASCE.filter(f=>f.tipo==='pranzo').map(f=>f.id)
+      : IDX_CENA;
+    return (s.fasce||[]).some(fid=>validFasceIds.includes(fid));
+  }
+
   // PASS 1: assign staff based on roleReqs (primary) + old slots (fallback)
   sessions.forEach(sess=>{
     const{di,fabKey,servizio,dayName}=sess;
@@ -1748,8 +1685,8 @@ function generaBozza(){
             if(weekWorkDays[p.id]>=(p.workDaysPerWeek||5))return;
             if(!ignoreOffReq&&(p.offRequests||[]).includes(di))return;
             const doable=compatShifts.length>0
-              ?compatShifts.filter(c=>(p.canDo||[]).includes(c))
-              :(p.canDo||[]).filter(c=>!isFuoriServizio(c));
+              ?compatShifts.filter(c=>(p.canDo||[]).includes(c)&&shiftMatchesServizio(c,servizio))
+              :(p.canDo||[]).filter(c=>!isFuoriServizio(c)&&shiftMatchesServizio(c,servizio));
             if(!doable.length)return;
             doable.sort((a,b)=>(shiftCount[p.id][a]||0)-(shiftCount[p.id][b]||0));
             const pref=(p.preferredRoles||{})[String(servizio==='pranzo'?1:4)]||'';
@@ -1791,7 +1728,7 @@ function generaBozza(){
           if(svc&&svc!==servizio)return;
           if(weekWorkDays[p.id]>=(p.workDaysPerWeek||5))return;
           if(!ignoreOffReq&&(p.offRequests||[]).includes(di))return;
-          const doable=acceptableCodes.filter(c=>(p.canDo||[]).includes(c));
+          const doable=acceptableCodes.filter(c=>(p.canDo||[]).includes(c)&&shiftMatchesServizio(c,servizio));
           if(!doable.length)return;
           doable.sort((a,b)=>(shiftCount[p.id][a]||0)-(shiftCount[p.id][b]||0));
           cands.push({p,bestCode:doable[0],score:(shiftCount[p.id][doable[0]]||0)+(weekWorkDays[p.id]*0.4)});
