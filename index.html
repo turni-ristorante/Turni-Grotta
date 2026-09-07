@@ -1397,9 +1397,11 @@ async function removeStaff(id){
   if(!confirm('Rimuovere questo dipendente dalla lista attiva?\nResterà visibile nell\'archivio storico dei turni.'))return;
   try{
     await sb.from('staff').update({attivo:false}).eq('id',id);
+    // Remove from active list only — keep in allStaff for historical display
     G.staff=G.staff.filter(s=>s.id!==id);
+    const inAll=G.allStaff.find(s=>s.id===id);
+    if(inAll)inAll.attivo=false;
     if(selectedStaffId===id)selectedStaffId=null;
-    applyReparto();
     renderStaff();
     setSyncStatus('ok');
   }catch(e){console.error('removeStaff error:',e);setSyncStatus('err');}
