@@ -690,6 +690,12 @@ function renderApp(){
       <button class="btn primary" onclick="saveConfig()">Salva</button>
     </div>
     <!-- ARCHIVIO VERSIONI -->
+    <!-- STAFF ARCHIVIATO -->
+    <div id="sec-staff-archiviato" class="sec">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Dipendenti rimossi. Riattivali per renderli nuovamente visibili nei turni e nella lista staff.</p>
+      <div id="staff-archiviato-list"></div>
+    </div>
+
     <div id="sec-archivio" class="sec">
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Storico delle versioni salvate. Puoi ripristinare qualsiasi versione precedente.</p>
       <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
@@ -752,7 +758,7 @@ function renderApp(){
 function renderNav(){
   let tabs;
   if(isResponsabile()){
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['archivio','Archivio'],['managers','Manager']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
   } else if(isManager()){
     // Il manager di reparto non gestisce ne' i manager ne' i giorni di apertura
     tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['archivio','Archivio']];
@@ -839,6 +845,7 @@ function goTab(t){
   if(t==='legenda')renderLegenda();
   if(t==='config')renderConfig();
   if(t==='settimane')renderWeekList();
+  if(t==='staff-archiviato')renderStaffArchiviato();
   if(t==='archivio')renderArchive();
   if(t==='managers')renderManagers();
 }
@@ -1396,11 +1403,12 @@ async function addStaff(){
 async function removeStaff(id){
   if(!confirm('Rimuovere questo dipendente dalla lista attiva?\nResterà visibile nell\'archivio storico dei turni.'))return;
   try{
-    await sb.from('staff').update({attivo:false}).eq('id',id);
+    const disabledAt=new Date().toISOString();
+    await sb.from('staff').update({attivo:false, disabled_at:disabledAt}).eq('id',id);
     // Remove from active list only — keep in allStaff for historical display
     G.staff=G.staff.filter(s=>s.id!==id);
     const inAll=G.allStaff.find(s=>s.id===id);
-    if(inAll)inAll.attivo=false;
+    if(inAll){inAll.attivo=false;inAll.disabled_at=disabledAt;}
     if(selectedStaffId===id)selectedStaffId=null;
     renderStaff();
     setSyncStatus('ok');
@@ -2602,7 +2610,70 @@ function exportPDF(){
   setTimeout(function(){win.print();},600);
 }
 
-// ===== CONFRONTO SETTIMANA =====
+// ===== STAFF ARCHIVIATO =====
+async function renderStaffArchiviato(){
+  const el=document.getElementById('staff-archiviato-list');if(!el)return;
+  el.innerHTML='<p style="font-size:12px;color:var(--text2);">Caricamento...</p>';
+  try{
+    const {data}=await sb.from('staff').select('id,name,role,reparto,attivo,created_at,disabled_at').eq('attivo',false).order('name');
+    if(!data||!data.length){
+      el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessun dipendente archiviato.</p>';
+      return;
+    }
+    const fmtDate=d=>d?new Date(d).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
+    let html=`<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+      <label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="seleziona-tutti-archiviati" onchange="selezionaTuttiArchiviati(this.checked)">
+        Seleziona tutti
+      </label>
+      <button class="btn success" style="font-size:11px;padding:4px 12px;" onclick="riattivaSelezionati()">↩ Riattiva selezionati</button>
+    </div>`;
+    html+=data.map(p=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:6px;flex-wrap:wrap;">
+        <input type="checkbox" class="archiviato-cb" value="${p.id}" style="width:16px;height:16px;cursor:pointer;">
+        <div style="flex:1;">
+          <span style="font-weight:500;">${p.name}</span>
+          ${p.role?`<span style="font-size:11px;color:var(--text2);margin-left:8px;">${p.role}</span>`:''}
+          <span style="font-size:10px;color:var(--text3);padding:2px 8px;background:var(--bg3);border-radius:20px;margin-left:6px;">${p.reparto||'sala'}</span>
+        </div>
+        <div style="font-size:10px;color:var(--text3);text-align:right;line-height:1.6;">
+          <div>Aggiunto: ${fmtDate(p.created_at)}</div>
+          <div>Rimosso: ${fmtDate(p.disabled_at)}</div>
+        </div>
+        <button class="btn success" style="font-size:11px;padding:4px 10px;" onclick="riattivaStaff('${p.id}','${p.name}')">↩ Riattiva</button>
+      </div>`).join('');
+    el.innerHTML=html;
+  }catch(e){el.innerHTML='<p style="color:var(--red-text);">Errore caricamento.</p>';}
+}
+function selezionaTuttiArchiviati(checked){
+  document.querySelectorAll('.archiviato-cb').forEach(cb=>cb.checked=checked);
+}
+async function riattivaSelezionati(){
+  const ids=[...document.querySelectorAll('.archiviato-cb:checked')].map(cb=>cb.value);
+  if(!ids.length){alert('Seleziona almeno una persona.');return;}
+  if(!confirm('Riattivare '+ids.length+' persone?'))return;
+  try{
+    await sb.from('staff').update({attivo:true,disabled_at:null}).in('id',ids);
+    ids.forEach(id=>{
+      const inAll=G.allStaff.find(s=>s.id===id);
+      if(inAll){inAll.attivo=true;inAll.disabled_at=null;}
+    });
+    applyReparto();
+    renderStaffArchiviato();
+    alert('Persone riattivate! Ricarica la pagina per vederle nei turni.');
+  }catch(e){alert('Errore durante la riattivazione.');}
+}
+async function riattivaStaff(id,name){
+  if(!confirm('Riattivare '+name+'? Tornerà visibile nella lista staff e nei turni.'))return;
+  try{
+    await sb.from('staff').update({attivo:true,disabled_at:null}).eq('id',id);
+    // Also update in memory if present
+    const inAll=G.allStaff.find(s=>s.id===id);
+    if(inAll){inAll.attivo=true;applyReparto();}
+    renderStaffArchiviato();
+    alert(name+' riattivato! Ricarica la pagina per vederlo nei turni.');
+  }catch(e){alert('Errore durante la riattivazione.');}
+}
 function openCompare(){
   const panel=document.getElementById('compare-panel');
   const overlay=document.getElementById('compare-overlay');
