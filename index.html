@@ -359,7 +359,7 @@ function applyReparto(r){
   ALL_FASCE=def.fasce;
   IDX_PC=def.fasce.map(f=>f.id);
   IDX_CENA=def.fasce.filter(f=>f.tipo==='cena').map(f=>f.id);
-  G.staff=G.allStaff.filter(s=>repOf(s)===REP);
+  G.staff=G.allStaff.filter(s=>repOf(s)===REP&&s.attivo!==false);
   G.shifts=G.allShifts.filter(s=>repOf(s)===REP);
   if(!G.shifts.length&&REP==='cucina'){
     // Set iniziale in memoria: diventa definitivo solo quando salvi
@@ -388,7 +388,7 @@ async function dbLoad(){
       if(r.key==='currentWeekId')G.currentWeekId=r.value;
     });}
     const {data:staff}=await sb.from('staff').select('*');
-    G.allStaff=(staff||[]).map(s=>({...s,reparto:s.reparto||REP_DEFAULT,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999,attivo:s.attivo!==false})).filter(s=>s.attivo!==false).sort((a,b)=>a.sort_order-b.sort_order);
+    G.allStaff=(staff||[]).map(s=>({...s,reparto:s.reparto||REP_DEFAULT,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999,attivo:s.attivo!==false})).sort((a,b)=>a.sort_order-b.sort_order);
     const {data:shifts}=await sb.from('shifts').select('*');
     let seedShifts=false;
     if(shifts&&shifts.length>0){G.allShifts=shifts.map(s=>({...s,reparto:s.reparto||REP_DEFAULT,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[],sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);}
