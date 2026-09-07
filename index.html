@@ -1405,6 +1405,31 @@ async function removeStaff(id){
   }catch(e){console.error('removeStaff error:',e);setSyncStatus('err');}
 }
 
+function renderStaff(){
+  const el=document.getElementById('staff-list');if(!el)return;
+  if(!G.staff.length){el.innerHTML='<p style="color:var(--text2);font-size:12px;">Nessun dipendente.</p>';return;}
+  let html='';
+  G.staff.forEach((p,i)=>{
+    const extra=isExtra(p);
+    html+=`<div class="staff-row ${selectedStaffId===p.id?'drag-over':''}" draggable="true" data-idx="${i}"
+      ondragstart="dragStart(event,${i})" ondragover="dragOver(event,${i})" ondrop="dragDrop(event,${i})" ondragend="dragEnd()"
+      onclick="selectStaff('${p.id}')">
+      <span class="drag-handle">⠿</span>
+      <span style="font-weight:500;flex:1;">${p.name}</span>
+      ${p.role?`<span style="color:var(--text2);font-size:11px;">${p.role}</span>`:''}
+      ${extra?'<span class="extra-badge">Extra</span>':`<span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett</span>`}
+      <button class="btn danger" style="font-size:11px;padding:3px 8px;" onclick="event.stopPropagation();removeStaff('${p.id}')">Rimuovi</button>
+    </div>`;
+    if(selectedStaffId===p.id){
+      html+='<div id="staff-detail-inline" style="margin:0 0 8px 0;"></div>';
+    }
+  });
+  el.innerHTML=html;
+  const old=document.getElementById('staff-detail-panel');if(old)old.innerHTML='';
+  renderStaffDetail();
+}
+function selectStaff(id){selectedStaffId=selectedStaffId===id?null:id;renderStaff();}
+
 async function saveStaffInfo(pid){
   const p=G.staff.find(s=>s.id===pid);if(!p)return;
   const nameEl=document.getElementById('edit-name-'+pid);
