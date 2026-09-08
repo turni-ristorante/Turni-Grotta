@@ -789,7 +789,14 @@ function renderNav(){
   } else if(isManager()){
     tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
   } else {
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['disponibilita','La mia disponibilità'],['richieste','Le mie richieste']];
+    // Gli extra vedono solo la disponibilita, lo staff fisso solo le richieste turno
+    const isExtraDip=currentDipendente&&isExtra(currentDipendente);
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero']];
+    if(isExtraDip){
+      tabs.push(['disponibilita','La mia disponibilità']);
+    } else {
+      tabs.push(['richieste','Le mie richieste']);
+    }
   }
   document.getElementById('main-nav').innerHTML=tabs.map(([id,label],i)=>`
     <button class="nav-btn ${i===0?'active':''}" onclick="goTab('${id}')">${label}</button>`).join('');
@@ -2565,11 +2572,12 @@ function getRichiestePersona(staffId){
 }
 
 function getRichiestaMessoSolare(staffId){
-  // Returns how many requests this person made in the current calendar month
+  // Counts requests in current calendar month, excluding those reset by a manager
   const now=new Date();
   const y=now.getFullYear();const m=now.getMonth()+1;
   return G.richieste.filter(r=>{
     if(r.staff_id!==staffId)return false;
+    if(r.esclusa_conteggio)return false;
     const d=new Date(r.created_at);
     return d.getFullYear()===y&&(d.getMonth()+1)===m;
   }).length;
@@ -2605,7 +2613,27 @@ function renderRichiesteManager(el){
   const pending=G.richieste.filter(r=>r.stato==='in_attesa');
   const done=G.richieste.filter(r=>r.stato!=='in_attesa');
 
-  let html=`<p style="font-size:14px;font-weight:500;margin-bottom:1rem;">Richieste turno</p>`;
+  let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.75rem;">Richieste turno</p>`;
+
+  // Reset counter panel
+  const staffFisso=G.allStaff.filter(s=>!isExtra(s)&&repOf(s)===REP&&s.attivo!==false);
+  const nowM=new Date();
+  html+=`<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;">
+    <p style="font-size:12px;font-weight:500;margin-bottom:8px;">Contatore richieste — ${MONTHS_IT[nowM.getMonth()]} ${nowM.getFullYear()}</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${staffFisso.map(s=>{
+        const usate=getRichiestaMessoSolare(s.id);
+        const col=usate>0?'var(--orange-text)':'var(--green-text)';
+        const bg=usate>0?'var(--orange-bg)':'var(--green-bg)';
+        const bd=usate>0?'var(--orange-border)':'var(--green-border)';
+        return `<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:${bg};color:${col};border:0.5px solid ${bd};">
+          ${s.name}: ${usate}/1
+          ${usate>0?`<span onclick="resetContatore('${s.id}','${s.name}')" style="cursor:pointer;font-weight:700;margin-left:4px;" title="Azzera contatore">↺</span>`:''}
+        </span>`;
+      }).join('')}
+    </div>
+    <p style="font-size:10px;color:var(--text3);margin-top:6px;">Clicca ↺ accanto a un nome per azzerare il suo contatore mensile.</p>
+  </div>`;
 
   if(!G.richieste.length){
     html+='<p style="color:var(--text3);font-size:12px;">Nessuna richiesta.</p>';
@@ -2644,11 +2672,14 @@ function renderRichiesteManager(el){
       const dateObj=new Date(r.data+'T12:00:00');
       const dateLabel=dateObj.toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'});
       const statoColor=r.stato==='approvata'?'color:var(--green-text);':'color:var(--red-text);';
-      return `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      return `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <span style="font-weight:500;flex:1;">${staff?staff.name:'?'}</span>
         <span style="font-size:11px;color:var(--text2);">${dateLabel}</span>
-        <span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:var(--bg3);">${r.turno_richiesto}</span>
+        <span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:#fff;border:0.5px solid var(--border);">${r.turno_richiesto}</span>
         <span style="font-size:11px;font-weight:600;${statoColor}">${r.stato==='approvata'?'✓ Approvata':'✗ Rifiutata'}</span>
+        ${r.esclusa_conteggio?'<span style="font-size:10px;color:var(--blue-text);background:var(--blue-bg);padding:1px 7px;border-radius:20px;">non conteggiata</span>':''}
+        <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="riapriRichiesta('${r.id}')" title="Riporta in attesa">↺ Riapri</button>
+        ${!r.esclusa_conteggio?`<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="escludiConteggio('${r.id}')" title="Non conta per il limite mensile">⊘ Non contare</button>`:''}
       </div>`;
     }).join('');
   }
@@ -2685,6 +2716,48 @@ async function rispondiRichiesta(id,stato){
       alert('Richiesta rifiutata.');
     }
     renderRichiesteManager(document.getElementById('richieste-content'));
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+async function riapriRichiesta(id){
+  const r=G.richieste.find(r=>r.id===id);if(!r)return;
+  if(!confirm('Riportare questa richiesta in attesa di risposta?'))return;
+  try{
+    await sb.from('richieste_turno').update({stato:'in_attesa',risposta_nota:null,updated_at:new Date().toISOString()}).eq('id',id);
+    r.stato='in_attesa';r.risposta_nota=null;r._seen=false;
+    renderRichiesteManager(document.getElementById('richieste-content'));
+    alert('Richiesta riaperta.');
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+async function escludiConteggio(id){
+  const r=G.richieste.find(r=>r.id===id);if(!r)return;
+  if(!confirm('Escludere questa richiesta dal conteggio mensile?\nLa persona potrà fare una nuova richiesta questo mese.'))return;
+  try{
+    await sb.from('richieste_turno').update({esclusa_conteggio:true}).eq('id',id);
+    r.esclusa_conteggio=true;
+    renderRichiesteManager(document.getElementById('richieste-content'));
+    alert('Richiesta esclusa dal conteggio.');
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+async function resetContatore(staffId,nome){
+  if(!confirm('Azzerare il contatore mensile di '+nome+'?\nPotrà fare una nuova richiesta questo mese.'))return;
+  const now=new Date();
+  const y=now.getFullYear();const m=now.getMonth()+1;
+  // Find this month's requests for this person that still count
+  const daEscludere=G.richieste.filter(r=>{
+    if(r.staff_id!==staffId||r.esclusa_conteggio)return false;
+    const d=new Date(r.created_at);
+    return d.getFullYear()===y&&(d.getMonth()+1)===m;
+  });
+  if(!daEscludere.length){alert('Nessuna richiesta da azzerare questo mese.');return;}
+  try{
+    const ids=daEscludere.map(r=>r.id);
+    await sb.from('richieste_turno').update({esclusa_conteggio:true}).in('id',ids);
+    daEscludere.forEach(r=>{r.esclusa_conteggio=true;});
+    renderRichiesteManager(document.getElementById('richieste-content'));
+    alert('Contatore di '+nome+' azzerato.');
   }catch(e){alert('Errore: '+e.message);}
 }
 
