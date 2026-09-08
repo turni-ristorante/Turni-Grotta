@@ -147,6 +147,20 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .compare-body{flex:1;overflow:auto;padding:12px;}
 .compare-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.2);z-index:499;display:none;}
 .compare-overlay.open{display:block;}
+
+/* Menu di navigazione a gruppi */
+.nav-group{position:relative;}
+.nav-group-btn{padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;border:none;background:transparent;color:var(--text2);font-family:inherit;display:flex;align-items:center;gap:5px;}
+.nav-group-btn:hover{background:#fff;}
+.nav-group-btn.active{background:#fff;color:var(--text);font-weight:500;border:0.5px solid var(--border);}
+.nav-group-btn .caret{font-size:8px;opacity:.6;}
+.nav-dropdown{position:absolute;top:calc(100% + 4px);left:0;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);box-shadow:0 6px 20px rgba(0,0,0,0.12);padding:4px;min-width:190px;z-index:400;display:none;}
+.nav-dropdown.open{display:block;}
+.nav-item{display:block;width:100%;text-align:left;padding:7px 12px;border-radius:6px;border:none;background:transparent;cursor:pointer;font-size:12px;color:var(--text2);font-family:inherit;white-space:nowrap;}
+.nav-item:hover{background:var(--bg3);color:var(--text);}
+.nav-item.active{background:var(--blue-bg);color:var(--blue-text);font-weight:500;}
+.nav-sep{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px 4px;border-top:0.5px solid var(--border);margin-top:4px;}
+.nav-dot{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:20px;background:#dc2626;color:#fff;font-size:9px;font-weight:700;}
 </style>
 </head><body>
 <!-- Compare panel overlay -->
@@ -447,6 +461,7 @@ async function loadModuliExtra(){
     if(document.getElementById('sec-ferie')?.classList.contains('active'))renderFerie();
     if(document.getElementById('sec-richieste')?.classList.contains('active'))renderRichieste();
     if(document.getElementById('sec-disponibilita')?.classList.contains('active'))renderDisponibilita();
+    if(isManager()&&document.getElementById('main-nav'))renderNav();
     updateRichiesteBadge();
   }catch(e){}
 }
@@ -803,6 +818,8 @@ function renderApp(){
         <button class="btn primary" onclick="createWeek(false)">+ Nuova vuota</button>
         <button class="btn warn" onclick="createWeek(true)">+ Duplica attiva</button>
       </div>
+      <div id="week-calendar"></div>
+      <div id="week-list-title" style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin:1.25rem 0 8px;"></div>
       <div class="week-list" id="week-list"></div>
       <div style="margin-top:1.5rem;padding-top:1rem;border-top:0.5px solid var(--border);">
         <p style="font-size:12px;font-weight:500;margin-bottom:8px;">Cambia password manager</p>
@@ -816,26 +833,84 @@ function renderApp(){
   renderNav();renderWeekSelector();renderAll();
 }
 
-function renderNav(){
-  let tabs;
-  if(isResponsabile()){
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['ferie','Ferie'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
-  } else if(isManager()){
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['ferie','Ferie'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
-  } else {
-    // Gli extra vedono solo la disponibilita, lo staff fisso solo le richieste turno
-    const isExtraDip=currentDipendente&&isExtra(currentDipendente);
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero']];
-    if(isExtraDip){
-      tabs.push(['disponibilita','La mia disponibilità']);
-    } else {
-      tabs.push(['richieste','Le mie richieste']);
-      tabs.push(['ferie','Le mie ferie']);
-    }
-  }
-  document.getElementById('main-nav').innerHTML=tabs.map(([id,label],i)=>`
-    <button class="nav-btn ${i===0?'active':''}" onclick="goTab('${id}')">${label}</button>`).join('');
+let currentTab='turni';
+
+function contaRichiestePendenti(){
+  let n=0;
+  (G.richieste||[]).forEach(r=>{
+    if(r.stato!=='in_attesa')return;
+    const s=G.allStaff.find(s=>s.id===r.staff_id);
+    if(s&&repOf(s)===REP)n++;
+  });
+  (G.ferieRichieste||[]).forEach(r=>{
+    if(r.stato!=='in_attesa')return;
+    const s=G.allStaff.find(s=>s.id===r.staff_id);
+    if(s&&repOf(s)===REP)n++;
+  });
+  return n;
 }
+
+function navGruppi(){
+  const gruppi=[];
+  gruppi.push({id:'turni',label:'Turni',items:[
+    ['turni','Turni'],['giornaliero','Giornaliero'],['settimane','Settimane']
+  ]});
+  const staffItems=[['staff','Staff'],['disponibilita','Disponibilità extra']];
+  if(isResponsabile())staffItems.push(['managers','Manager']);
+  staffItems.push({sep:'Richieste'});
+  staffItems.push(['richieste','Richieste turno']);
+  staffItems.push(['ferie','Richieste ferie']);
+  gruppi.push({id:'staff',label:'Staff',items:staffItems,badge:contaRichiestePendenti()});
+  gruppi.push({id:'config',label:'Configurazione',items:[
+    ['legenda','Legenda turni'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],
+    ['regole','Regole'],['config','Apertura']
+  ]});
+  gruppi.push({id:'archivio',label:'Archivio',items:[
+    ['archivio','Archivio versioni'],['staff-archiviato','Staff archiviato']
+  ]});
+  return gruppi;
+}
+
+function renderNav(){
+  const nav=document.getElementById('main-nav');if(!nav)return;
+  if(!isManager()){
+    // Dipendenti: poche voci, nessun menu
+    const isExtraDip=currentDipendente&&isExtra(currentDipendente);
+    const tabs=[['turni','Turni'],['giornaliero','Giornaliero']];
+    if(isExtraDip)tabs.push(['disponibilita','La mia disponibilità']);
+    else{tabs.push(['richieste','Le mie richieste']);tabs.push(['ferie','Le mie ferie']);}
+    nav.innerHTML=tabs.map(([id,label])=>
+      `<button class="nav-btn ${id===currentTab?'active':''}" onclick="goTab('${id}')">${label}</button>`).join('');
+    return;
+  }
+  const gruppi=navGruppi();
+  nav.innerHTML=gruppi.map(g=>{
+    const contieneAttivo=g.items.some(it=>Array.isArray(it)&&it[0]===currentTab);
+    const voci=g.items.map(it=>{
+      if(!Array.isArray(it))return `<div class="nav-sep">${it.sep}</div>`;
+      const [id,label]=it;
+      return `<button class="nav-item ${id===currentTab?'active':''}" onclick="goTab('${id}')">${label}</button>`;
+    }).join('');
+    const dot=g.badge?`<span class="nav-dot">${g.badge}</span>`:'';
+    return `<div class="nav-group">
+      <button class="nav-group-btn ${contieneAttivo?'active':''}" onclick="toggleNavGroup(event,'${g.id}')">
+        ${g.label}${dot}<span class="caret">&#9660;</span>
+      </button>
+      <div class="nav-dropdown" id="navdd-${g.id}">${voci}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleNavGroup(ev,gid){
+  ev.stopPropagation();
+  const dd=document.getElementById('navdd-'+gid);
+  const gia=dd&&dd.classList.contains('open');
+  document.querySelectorAll('.nav-dropdown').forEach(d=>d.classList.remove('open'));
+  if(dd&&!gia)dd.classList.add('open');
+}
+document.addEventListener('click',()=>{
+  document.querySelectorAll('.nav-dropdown').forEach(d=>d.classList.remove('open'));
+});
 
 function renderLogin(){
   document.getElementById('app').innerHTML=`
@@ -901,12 +976,11 @@ function logout(){stopPresence();role='';currentManager=null;currentDipendente=n
 async function changePwd(){const p=document.getElementById('new-pwd').value.trim();if(!p){alert('Inserisci una password.');return;}G.managerPwd=p;await dbSaveConfig('managerPwd',p);alert('Password aggiornata!');}
 
 function goTab(t){
+  currentTab=t;
+  document.querySelectorAll('.nav-dropdown').forEach(d=>d.classList.remove('open'));
   document.querySelectorAll('.sec').forEach(el=>el.classList.remove('active'));
   const el=document.getElementById('sec-'+t);if(el)el.classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(el=>{
-    const map={turni:'Turni',giornaliero:'Giornaliero',staff:'Staff',fabbisogno:'Fabbisogno',equivalenze:'Equivalenze',regole:'Regole',legenda:'Legenda turni',config:'Apertura',settimane:'Settimane'};
-    el.classList.toggle('active',el.textContent.trim()===map[t]);
-  });
+  renderNav();
   if(t==='turni'){renderTurni();renderLegSidebar();}
   if(t==='giornaliero'){renderDayNav();renderLegSidebar();}
   if(t==='staff')renderStaff();
@@ -1202,9 +1276,20 @@ function weekDrop(e,id){
   renderWeekList();
 }
 function renderWeekList(){
-  const sorted=getWeeksSorted();
-  document.getElementById('week-list').innerHTML=sorted.map((w,i)=>`
-    <div class="week-item ${w.id===G.currentWeekId?'current':''}" draggable="true"
+  renderWeekCalendar();
+  const sorted=getWeeksSorted().filter(w=>isPublished(w));
+  const titolo=document.getElementById('week-list-title');
+  if(titolo)titolo.textContent='Settimane pubblicate — '+repLabel();
+  const el=document.getElementById('week-list');if(!el)return;
+  if(!sorted.length){
+    el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessuna settimana pubblicata per '+repLabel()+'. Usa il calendario qui sopra per aprire una bozza e pubblicarla.</p>';
+    return;
+  }
+  el.innerHTML=sorted.map(w=>weekItemHtml(w)).join('');
+}
+
+function weekItemHtml(w){
+  return `<div class="week-item ${w.id===G.currentWeekId?'current':''}" draggable="true"
       ondragstart="weekDragStart(event,'${w.id}')" ondragover="weekDragOver(event)" ondrop="weekDrop(event,'${w.id}')">
       <span style="color:var(--text3);font-size:16px;cursor:grab;padding:0 6px;">⠿</span>
       <input value="${w.name}" onchange="renameWeek('${w.id}',this.value)" style="flex:1;min-width:100px;border:none;background:transparent;font-size:13px;color:var(--text);padding:0;font-family:inherit;">
@@ -1217,7 +1302,86 @@ function renderWeekList(){
         <button class="btn primary" style="font-size:11px;" onclick="copyTurniSu('${w.id}')">Copia turni su...</button>
         <button class="btn danger" onclick="deleteWeek('${w.id}')">Elimina</button>
       </div>
-    </div>`).join('');
+    </div>`;
+}
+
+// Trova la settimana che contiene una data (stringa YYYY-MM-DD)
+function settimanaDelGiorno(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  return G.weeks.find(w=>{
+    if(!w.startDate)return false;
+    const start=new Date(w.startDate+'T12:00:00');
+    const end=new Date(start);end.setDate(end.getDate()+6);
+    return d>=start&&d<=end;
+  })||null;
+}
+
+function renderWeekCalendar(){
+  const el=document.getElementById('week-calendar');if(!el)return;
+  const oggi=new Date();
+  if(window._wkCalMese===undefined)window._wkCalMese=oggi.getMonth();
+  if(window._wkCalAnno===undefined)window._wkCalAnno=oggi.getFullYear();
+  const mese=window._wkCalMese,anno=window._wkCalAnno;
+
+  let html=`<div style="background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:14px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+      <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="cambiaMeseCal(-1)">&#8249;</button>
+      <span style="font-size:13px;font-weight:500;flex:1;text-align:center;min-width:140px;">${MONTHS_IT[mese]} ${anno}</span>
+      <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="cambiaMeseCal(1)">&#8250;</button>
+      <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="window._wkCalMese=${oggi.getMonth()};window._wkCalAnno=${oggi.getFullYear()};renderWeekCalendar()">Oggi</button>
+    </div>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">Clicca una settimana per aprirla. Le righe grigie non hanno ancora una settimana creata.</p>`;
+
+  const giorniMese=new Date(anno,mese+1,0).getDate();
+  // Raggruppa i giorni del mese per settimana (lunedi -> domenica)
+  const righe=[];
+  let cur=null;
+  for(let g=1;g<=giorniMese;g++){
+    const d=new Date(anno,mese,g);
+    const dow=d.getDay()===0?6:d.getDay()-1;
+    if(dow===0||cur===null){
+      if(cur)righe.push(cur);
+      cur={giorni:[null,null,null,null,null,null,null]};
+    }
+    cur.giorni[dow]={n:g,dateStr:dateToStr(d)};
+  }
+  if(cur)righe.push(cur);
+
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:4px;">';
+  ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].forEach(d=>{
+    html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);">${d}</div>`;
+  });
+  html+='</div>';
+
+  const oggiStr=dateToStr(oggi);
+  righe.forEach(r=>{
+    const primo=r.giorni.find(x=>x);
+    const wk=primo?settimanaDelGiorno(primo.dateStr):null;
+    const attiva=wk&&wk.id===G.currentWeekId;
+    const pubbl=wk&&isPublished(wk);
+    let bg='var(--bg3)',border='var(--border)';
+    if(attiva){bg='var(--blue-bg)';border='var(--blue-border)';}
+    else if(pubbl){bg='var(--green-bg)';border='var(--green-border)';}
+    else if(wk){bg='#fff';border='var(--border2)';}
+    const azione=wk?`onclick="switchWeek('${wk.id}');goTab('turni')"`:'';
+    const etichetta=wk?(wk.name+(attiva?' • attiva':pubbl?' • pubblicata':' • bozza')):'nessuna settimana';
+    html+=`<div ${azione} style="display:flex;align-items:center;gap:8px;border:0.5px solid ${border};background:${bg};border-radius:6px;padding:5px 8px;margin-bottom:4px;cursor:${wk?'pointer':'default'};">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;flex:1;">
+        ${r.giorni.map(x=>x?`<div style="text-align:center;font-size:11px;font-weight:${x.dateStr===oggiStr?'700':'400'};color:${x.dateStr===oggiStr?'var(--blue-text)':'var(--text)'};">${x.n}</div>`:'<div></div>').join('')}
+      </div>
+      <span style="font-size:10px;color:var(--text2);white-space:nowrap;min-width:130px;text-align:right;">${etichetta}</span>
+    </div>`;
+  });
+
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+function cambiaMeseCal(delta){
+  let m=window._wkCalMese+delta,a=window._wkCalAnno;
+  if(m<0){m=11;a--;}else if(m>11){m=0;a++;}
+  window._wkCalMese=m;window._wkCalAnno=a;
+  renderWeekCalendar();
 }
 
 // ===== UNDO =====
