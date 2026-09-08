@@ -347,7 +347,7 @@ const DEF_SHIFTS_CUCINA=[
 
 let G={
   disponibilita:{},staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
-let role='';let currentManager=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
+let role='';let currentManager=null;let currentDipendente=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
 
 // applyReparto ricalcola tutte le viste derivate dal reparto attivo.
 // G.staff e G.shifts restano i nomi usati ovunque nell'app, ma ora
@@ -835,9 +835,9 @@ function doLoginDep(){
   const p=G.allStaff.find(s=>s.accessCode&&s.accessCode===code);
   if(!p){document.getElementById('dep-err').style.display='block';return;}
   // Il dipendente vede solo il proprio reparto, in sola lettura
-  role='dipendente';applyReparto(repOf(p));renderApp();
+  role='dipendente';currentDipendente=p;window._dispStaffId=p.id;applyReparto(repOf(p));renderApp();
 }
-function logout(){stopPresence();role='';currentManager=null;renderLogin();}
+function logout(){stopPresence();role='';currentManager=null;currentDipendente=null;window._dispStaffId=null;renderLogin();}
 async function changePwd(){const p=document.getElementById('new-pwd').value.trim();if(!p){alert('Inserisci una password.');return;}G.managerPwd=p;await dbSaveConfig('managerPwd',p);alert('Password aggiornata!');}
 
 function goTab(t){
@@ -2584,99 +2584,140 @@ async function deleteDisp(staffId, dateStr){
 
 function renderDisponibilita(){
   const el=document.getElementById('disp-content');if(!el)return;
-
-  // Determine whose disponibilita to show
-  // Manager: can select any extra staff of their reparto
-  // Operatore (extra): sees only their own
-  const myStaff=G.allStaff.find(s=>s.accessCode&&s.accessCode===window._accessCode);
-  const canEditOthers=isManager();
-
-  // Build list of extra staff to show
-  const extraStaff=G.allStaff.filter(s=>isExtra(s)&&repOf(s)===REP&&s.attivo!==false);
-
-  // Current selected staff (for manager view)
-  if(!window._dispStaffId){
-    window._dispStaffId=myStaff?myStaff.id:(extraStaff[0]?.id||null);
+  if(isManager()){
+    renderDispManager(el);
+  } else {
+    renderDispExtra(el);
   }
-  const selStaffId=window._dispStaffId;
-  const selStaff=G.allStaff.find(s=>s.id===selStaffId);
+}
 
-  // Build calendar: current month + next 2 months
+function renderDispManager(el){
+  const today=new Date();
+  const selMonth=window._dispMonth||today.getMonth();
+  const selYear=window._dispYear||today.getFullYear();
+
+  // Month selector tabs
+  let monthTabs='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:1rem;">';
+  for(let m=0;m<12;m++){
+    const active=m===selMonth;
+    monthTabs+=`<button onclick="window._dispMonth=${m};window._dispYear=${selYear};renderDisponibilita()"
+      style="padding:4px 10px;border-radius:var(--radius);border:0.5px solid var(--border);font-size:11px;cursor:pointer;font-family:inherit;
+      background:${active?'var(--blue-bg)':'#fff'};color:${active?'var(--blue-text)':'var(--text2)'};font-weight:${active?'600':'400'};">
+      ${MONTHS_IT[m]}</button>`;
+  }
+  monthTabs+=`</div>`;
+
+  // Calendar grid
+  const year=selYear;const month=selMonth;
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const firstDay=new Date(year,month,1).getDay();
+  const offset=firstDay===0?6:firstDay-1;
+
+  let html=monthTabs;
+  html+=`<p style="font-size:13px;font-weight:500;margin-bottom:1rem;">${MONTHS_IT[month]} ${year}</p>`;
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;">';
+
+  ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].forEach(d=>{
+    html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);padding:4px 0;">${d}</div>`;
+  });
+
+  for(let i=0;i<offset;i++) html+='<div></div>';
+
+  for(let day=1;day<=daysInMonth;day++){
+    const date=new Date(year,month,day);
+    const dateStr=dateToStr(date);
+    // Find all available extra for this day
+    const available=G.allStaff.filter(s=>{
+      if(!isExtra(s)||!s.attivo)return false;
+      return getDisp(s.id,dateStr);
+    });
+    html+=`<div style="border:0.5px solid var(--border);border-radius:6px;background:#fff;padding:5px;min-height:70px;">
+      <div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:3px;">${day}</div>
+      ${available.map(s=>{
+        const disp=getDisp(s.id,dateStr);
+        const fasciaLabels=disp&&disp.fasce&&disp.fasce.length
+          ?disp.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label:'';}).join(', ')
+          :'Tutto il giorno';
+        return `<div onclick="showDispDetail('${s.id}','${dateStr}')"
+          style="font-size:9px;background:#dcfce7;border:0.5px solid #86efac;border-radius:3px;padding:1px 4px;margin-bottom:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+          title="${s.name} — ${fasciaLabels}">${s.name}</div>`;
+      }).join('')}
+    </div>`;
+  }
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+function showDispDetail(staffId, dateStr){
+  const s=G.allStaff.find(s=>s.id===staffId);if(!s)return;
+  const disp=getDisp(staffId,dateStr);if(!disp)return;
+  const dateObj=new Date(dateStr+'T12:00:00');
+  const dateLabel=dateObj.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+  const fasce=disp.fasce&&disp.fasce.length
+    ?disp.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?`${f.label} (${f.orario})`:fid;}).join('<br>')
+    :'Tutto il giorno';
+  const popup=document.createElement('div');
+  popup.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:600;display:flex;align-items:center;justify-content:center;';
+  popup.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.5rem;width:300px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:4px;">${s.name}</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">${dateLabel}</p>
+    <p style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:6px;">Disponibile in:</p>
+    <p style="font-size:12px;color:var(--text);line-height:1.8;">${fasce}</p>
+    <button class="btn" style="margin-top:1rem;" onclick="this.closest('div').parentElement.remove()">Chiudi</button>
+  </div>`;
+  document.body.appendChild(popup);
+  popup.addEventListener('click',e=>{if(e.target===popup)popup.remove();});
+}
+
+function renderDispExtra(el){
+  const staffId=window._dispStaffId;
+  if(!staffId){el.innerHTML='<p style="color:var(--text3);font-size:12px;">Accesso non riconosciuto.</p>';return;}
+  const staff=G.allStaff.find(s=>s.id===staffId);
+  if(!staff){el.innerHTML='<p style="color:var(--text3);">Profilo non trovato.</p>';return;}
+
   const today=new Date();
   const yearEnd=new Date(today.getFullYear(),11,31);
 
-  let html='';
+  let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.5rem;">La mia disponibilità</p>`;
+  html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Clicca su un giorno per indicare quando sei disponibile. Il verde indica i giorni già segnati.</p>`;
 
-  // Staff selector (manager only)
-  if(canEditOthers&&extraStaff.length){
-    html+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;flex-wrap:wrap;">
-      <label style="font-size:12px;color:var(--text2);">Dipendente:</label>
-      <select onchange="window._dispStaffId=this.value;renderDisponibilita()"
-        style="font-size:12px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
-        ${extraStaff.map(s=>`<option value="${s.id}"${s.id===selStaffId?' selected':''}>${s.name}</option>`).join('')}
-      </select>
-    </div>`;
-  }
-
-  if(!selStaff){
-    el.innerHTML='<p style="color:var(--text3);font-size:12px;">Nessun extra selezionato.</p>';
-    return;
-  }
-
-  html+=`<p style="font-size:14px;font-weight:500;margin-bottom:1rem;">Disponibilità di <b>${selStaff.name}</b></p>`;
-  html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Seleziona i giorni e le fasce in cui sei disponibile. Le celle verdi indicano la tua disponibilità nella griglia turni.</p>`;
-
-  // Calendar by month
-  const startMonth=new Date(today.getFullYear(), today.getMonth(), 1);
-  const endMonth=new Date(today.getFullYear(), 11, 1); // December
-
-  for(let m=new Date(startMonth); m<=endMonth; m.setMonth(m.getMonth()+1)){
-    const year=m.getFullYear();
-    const month=m.getMonth();
+  for(let m=new Date(today.getFullYear(), today.getMonth(), 1); m<=yearEnd; m.setMonth(m.getMonth()+1)){
+    const year=m.getFullYear();const month=m.getMonth();
     const monthName=MONTHS_IT[month]+' '+year;
     const daysInMonth=new Date(year,month+1,0).getDate();
-
     html+=`<div style="margin-bottom:1.5rem;">
       <p style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">${monthName}</p>
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">`;
-
-    // Day headers
     ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].forEach(d=>{
       html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);padding:4px 0;">${d}</div>`;
     });
-
-    // Empty cells before first day
     const firstDay=new Date(year,month,1).getDay();
     const offset=firstDay===0?6:firstDay-1;
     for(let i=0;i<offset;i++) html+='<div></div>';
-
-    // Days
     for(let day=1;day<=daysInMonth;day++){
       const date=new Date(year,month,day);
       const dateStr=dateToStr(date);
       const isPast=date<new Date(today.getFullYear(),today.getMonth(),today.getDate());
-      const disp=getDisp(selStaffId,dateStr);
+      const disp=getDisp(staffId,dateStr);
       const hasFull=disp&&(!disp.fasce||!disp.fasce.length);
       const hasSome=disp&&disp.fasce&&disp.fasce.length>0;
       const fasciaLabels=disp&&disp.fasce&&disp.fasce.length>0
-        ? disp.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label.slice(0,3):'';}).join(',')
-        : '';
-
+        ?disp.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label.slice(0,3):'';}).join(','):'';
       let bg='#fff';let border='var(--border)';let textCol='var(--text)';
       if(isPast){bg='var(--bg3)';textCol='var(--text3)';}
       else if(hasFull){bg='#dcfce7';border='#86efac';}
       else if(hasSome){bg='#f0fdf4';border='#86efac';}
-
-      const clickable=!isPast;
-      html+=`<div onclick="${clickable?`openDispDay('${selStaffId}','${dateStr}')`:''}"
-        style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:4px;min-height:48px;cursor:${clickable?'pointer':'default'};position:relative;">
+      html+=`<div onclick="${!isPast?`openDispDay('${staffId}','${dateStr}')`:''}"
+        style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:4px;min-height:48px;cursor:${!isPast?'pointer':'default'};">
         <div style="font-size:10px;font-weight:600;color:${textCol};">${day}</div>
         ${fasciaLabels?`<div style="font-size:8px;color:#16a34a;line-height:1.3;margin-top:2px;">${fasciaLabels}</div>`:''}
-        ${hasFull?`<div style="font-size:8px;color:#16a34a;">Tutto il giorno</div>`:''}
+        ${hasFull?`<div style="font-size:8px;color:#16a34a;">Tutto</div>`:''}
       </div>`;
     }
     html+='</div></div>';
   }
+  el.innerHTML=html;
+}
 
   el.innerHTML=html;
 }
