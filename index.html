@@ -2761,6 +2761,72 @@ async function resetContatore(staffId,nome){
   }catch(e){alert('Errore: '+e.message);}
 }
 
+function modificaRichiesta(id){
+  const r=G.richieste.find(r=>r.id===id);if(!r)return;
+  if(r.stato!=='in_attesa'){alert('Non puoi modificare una richiesta già decisa.');return;}
+  const popup=document.createElement('div');
+  popup.id='rich-edit-popup';
+  popup.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:600;display:flex;align-items:center;justify-content:center;';
+  popup.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.5rem;width:380px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:1rem;">Modifica richiesta</h3>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Data</label>
+        <input type="date" id="edit-rich-data" value="${r.data}" min="${dateToStr(new Date())}"
+          style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Turno richiesto</label>
+        <select id="edit-rich-turno" style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;background:#fff;">
+          <option value="OFF"${r.turno_richiesto==='OFF'?' selected':''}>OFF (riposo)</option>
+          ${G.shifts.filter(s=>!s.is_ferie).map(s=>`<option value="${s.code}"${s.code===r.turno_richiesto?' selected':''}>${s.code}${s.s1&&s.e1?' ('+s.s1+'–'+s.e1+')':s.s2&&s.e2?' ('+s.s2+'–'+s.e2+')':''}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Nota (opzionale)</label>
+        <textarea id="edit-rich-nota" rows="2"
+          style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:12px;resize:none;">${r.nota||''}</textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:1rem;">
+      <button class="btn primary" onclick="salvaModificaRichiesta('${r.id}')">Salva modifiche</button>
+      <button class="btn" onclick="document.getElementById('rich-edit-popup').remove()">Annulla</button>
+    </div>
+  </div>`;
+  document.body.appendChild(popup);
+  popup.addEventListener('click',e=>{if(e.target===popup)popup.remove();});
+}
+
+async function salvaModificaRichiesta(id){
+  const r=G.richieste.find(r=>r.id===id);if(!r)return;
+  const data=document.getElementById('edit-rich-data').value;
+  const turno=document.getElementById('edit-rich-turno').value;
+  const nota=document.getElementById('edit-rich-nota').value.trim();
+  if(!data){alert('Seleziona una data.');return;}
+  if(!turno){alert('Seleziona un turno.');return;}
+  try{
+    await sb.from('richieste_turno').update({
+      data,turno_richiesto:turno,nota:nota||null,updated_at:new Date().toISOString()
+    }).eq('id',id);
+    r.data=data;r.turno_richiesto=turno;r.nota=nota||null;
+    document.getElementById('rich-edit-popup')?.remove();
+    renderRichiesteStaff(document.getElementById('richieste-content'));
+    alert('Richiesta aggiornata!');
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+async function annullaRichiesta(id){
+  const r=G.richieste.find(r=>r.id===id);if(!r)return;
+  if(r.stato!=='in_attesa'){alert('Non puoi annullare una richiesta già decisa.');return;}
+  if(!confirm('Annullare questa richiesta?\nPotrai farne una nuova questo mese.'))return;
+  try{
+    await sb.from('richieste_turno').delete().eq('id',id);
+    G.richieste=G.richieste.filter(x=>x.id!==id);
+    renderRichiesteStaff(document.getElementById('richieste-content'));
+    alert('Richiesta annullata.');
+  }catch(e){alert('Errore: '+e.message);}
+}
+
 function renderRichiesteStaff(el){
   const staffId=currentDipendente.id;
   const mioRichieste=getRichiestePersona(staffId);
@@ -2796,6 +2862,7 @@ function renderRichiesteStaff(el){
         :r.stato==='approvata'?'background:var(--green-bg);color:var(--green-text);border-color:var(--green-border);'
         :'background:var(--red-bg);color:var(--red-text);border-color:var(--red-border);';
       const statoLabel=r.stato==='in_attesa'?'⏳ In attesa':r.stato==='approvata'?'✓ Approvata':'✗ Rifiutata';
+      const modificabile=r.stato==='in_attesa';
       return `<div style="background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <div style="flex:1;">
@@ -2805,6 +2872,10 @@ function renderRichiesteStaff(el){
           </div>
           <span style="font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;border:0.5px solid;${statoStyle}">${statoLabel}</span>
         </div>
+        ${modificabile?`<div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="modificaRichiesta('${r.id}')">✎ Modifica</button>
+          <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="annullaRichiesta('${r.id}')">✗ Annulla richiesta</button>
+        </div>`:''}
         ${r.risposta_nota?`<p style="font-size:11px;color:var(--text2);margin-top:8px;padding:6px 8px;background:var(--bg3);border-radius:4px;">Risposta: ${r.risposta_nota}</p>`:''}
       </div>`;
     }).join('');
