@@ -834,8 +834,11 @@ function doLoginDep(){
   if(!code){document.getElementById('dep-err').style.display='block';return;}
   const p=G.allStaff.find(s=>s.accessCode&&s.accessCode===code);
   if(!p){document.getElementById('dep-err').style.display='block';return;}
-  // Il dipendente vede solo il proprio reparto, in sola lettura
-  role='dipendente';currentDipendente=p;window._dispStaffId=p.id;applyReparto(repOf(p));renderApp();
+  role='dipendente';
+  currentDipendente=p;
+  window._dispStaffId=p.id;
+  applyReparto(repOf(p));
+  renderApp();
 }
 function logout(){stopPresence();role='';currentManager=null;currentDipendente=null;window._dispStaffId=null;renderLogin();}
 async function changePwd(){const p=document.getElementById('new-pwd').value.trim();if(!p){alert('Inserisci una password.');return;}G.managerPwd=p;await dbSaveConfig('managerPwd',p);alert('Password aggiornata!');}
@@ -2670,9 +2673,10 @@ function showDispDetail(staffId, dateStr){
 }
 
 function renderDispExtra(el){
+  // Ensure we have the staff ID
+  if(!window._dispStaffId&&currentDipendente) window._dispStaffId=currentDipendente.id;
   const staffId=window._dispStaffId;
-  console.log('renderDispExtra - staffId:', staffId, 'currentDipendente:', currentDipendente?.name, 'window._dispStaffId:', window._dispStaffId);
-  if(!staffId){el.innerHTML='<p style="color:var(--text3);font-size:12px;">Accesso non riconosciuto.</p>';return;}
+  if(!staffId){el.innerHTML='<p style="color:var(--text3);font-size:12px;">Accesso non riconosciuto. Riprova ad accedere.</p>';return;}
   const staff=G.allStaff.find(s=>s.id===staffId);
   if(!staff){el.innerHTML='<p style="color:var(--text3);">Profilo non trovato.</p>';return;}
 
