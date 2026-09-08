@@ -3054,39 +3054,55 @@ function showDispDetail(staffId,dateStr){
 function renderDispCalendar(el,staffId,canEdit){
   const staff=G.allStaff.find(s=>s.id===staffId);
   const today=new Date();
+  if(window._dispExtraMonth===undefined)window._dispExtraMonth=today.getMonth();
+  const selMonth=window._dispExtraMonth;
+  const year=today.getFullYear();
+
   let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.5rem;">La mia disponibilità${staff?' — '+staff.name:''}</p>`;
   html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Clicca su un giorno per indicare quando sei disponibile. I giorni verdi sono già segnati.</p>`;
-  for(let m=today.getMonth();m<12;m++){
-    const year=today.getFullYear();const month=m;
-    const daysInMonth=new Date(year,month+1,0).getDate();
-    const firstDay=new Date(year,month,1).getDay();
-    const offset=firstDay===0?6:firstDay-1;
-    html+=`<div style="margin-bottom:1.5rem;">
-      <p style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">${MONTHS_IT[month]} ${year}</p>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">`;
-    ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].forEach(d=>{
-      html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);padding:4px 0;">${d}</div>`;
-    });
-    for(let i=0;i<offset;i++)html+='<div></div>';
-    for(let day=1;day<=daysInMonth;day++){
-      const date=new Date(year,month,day);
-      const dateStr=dateToStr(date);
-      const isPast=date<new Date(today.getFullYear(),today.getMonth(),today.getDate());
-      const disp=getDisp(staffId,dateStr);
-      const hasFull=disp&&(!disp.fasce||!disp.fasce.length);
-      const hasSome=disp&&disp.fasce&&disp.fasce.length>0;
-      const labels=disp&&disp.fasce&&disp.fasce.length?disp.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label.slice(0,3):'';}).join(','):'';
-      let bg=isPast?'var(--bg3)':hasFull||hasSome?'#dcfce7':'#fff';
-      let border=hasFull||hasSome?'#86efac':'var(--border)';
-      html+=`<div onclick="${!isPast?`openDispDay('${staffId}','${dateStr}')`:''}"
-        style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:4px;min-height:48px;cursor:${!isPast?'pointer':'default'};">
-        <div style="font-size:10px;font-weight:600;color:${isPast?'var(--text3)':'var(--text)'};">${day}</div>
-        ${labels?`<div style="font-size:8px;color:#16a34a;margin-top:2px;">${labels}</div>`:''}
-        ${hasFull?`<div style="font-size:8px;color:#16a34a;">Tutto</div>`:''}
-      </div>`;
-    }
-    html+='</div></div>';
+
+  // Month tabs
+  html+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:1rem;">';
+  for(let m=0;m<12;m++){
+    const active=m===selMonth;
+    const isPastMonth=m<today.getMonth();
+    html+=`<button onclick="window._dispExtraMonth=${m};renderDisponibilita()"
+      style="padding:4px 10px;border-radius:var(--radius);border:0.5px solid var(--border);font-size:11px;cursor:pointer;font-family:inherit;
+      background:${active?'var(--blue-bg)':'#fff'};color:${active?'var(--blue-text)':isPastMonth?'var(--text3)':'var(--text2)'};font-weight:${active?'600':'400'};opacity:${isPastMonth?0.5:1};">
+      ${MONTHS_IT[m]}</button>`;
   }
+  html+='</div>';
+
+  // Single month calendar
+  const month=selMonth;
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const firstDay=new Date(year,month,1).getDay();
+  const offset=firstDay===0?6:firstDay-1;
+
+  html+=`<p style="font-size:13px;font-weight:500;margin-bottom:0.75rem;">${MONTHS_IT[month]} ${year}</p>`;
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;">';
+  ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].forEach(d=>{
+    html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);padding:4px 0;">${d}</div>`;
+  });
+  for(let i=0;i<offset;i++)html+='<div></div>';
+  for(let day=1;day<=daysInMonth;day++){
+    const date=new Date(year,month,day);
+    const dateStr=dateToStr(date);
+    const isPast=date<new Date(today.getFullYear(),today.getMonth(),today.getDate());
+    const disp=getDisp(staffId,dateStr);
+    const hasFull=disp&&(!disp.fasce||!disp.fasce.length);
+    const hasSome=disp&&disp.fasce&&disp.fasce.length>0;
+    const labels=disp&&disp.fasce&&disp.fasce.length?disp.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label.slice(0,3):'';}).join(', '):'';
+    let bg=isPast?'var(--bg3)':hasFull||hasSome?'#dcfce7':'#fff';
+    let border=hasFull||hasSome?'#86efac':'var(--border)';
+    html+=`<div onclick="${!isPast?`openDispDay('${staffId}','${dateStr}')`:''}"
+      style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:6px;min-height:64px;cursor:${!isPast?'pointer':'default'};">
+      <div style="font-size:11px;font-weight:600;color:${isPast?'var(--text3)':'var(--text)'};">${day}</div>
+      ${labels?`<div style="font-size:9px;color:#16a34a;margin-top:3px;line-height:1.4;">${labels}</div>`:''}
+      ${hasFull?`<div style="font-size:9px;color:#16a34a;margin-top:3px;">Tutto il giorno</div>`:''}
+    </div>`;
+  }
+  html+='</div>';
   el.innerHTML=html;
 }
 
