@@ -2671,6 +2671,7 @@ function showDispDetail(staffId, dateStr){
 
 function renderDispExtra(el){
   const staffId=window._dispStaffId;
+  console.log('renderDispExtra - staffId:', staffId, 'currentDipendente:', currentDipendente?.name, 'window._dispStaffId:', window._dispStaffId);
   if(!staffId){el.innerHTML='<p style="color:var(--text3);font-size:12px;">Accesso non riconosciuto.</p>';return;}
   const staff=G.allStaff.find(s=>s.id===staffId);
   if(!staff){el.innerHTML='<p style="color:var(--text3);">Profilo non trovato.</p>';return;}
