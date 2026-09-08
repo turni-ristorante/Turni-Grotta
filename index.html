@@ -345,7 +345,8 @@ const DEF_SHIFTS_CUCINA=[
   {code:'PC',s1:'11:00',e1:'15:30',s2:'18:30',e2:'00:30',is_off:false,is_ferie:false,fasce:[1,3]},
 ];
 
-let G={staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
+let G={
+  disponibilita:{},staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
 let role='';let currentManager=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
 
 // applyReparto ricalcola tutte le viste derivate dal reparto attivo.
@@ -402,6 +403,12 @@ async function dbLoad(){
     if(!G.currentWeekId||!G.weeks.find(w=>w.id===G.currentWeekId)){G.currentWeekId=G.weeks[0].id;await sb.from('config').upsert({key:'currentWeekId',value:G.currentWeekId});}
     const {data:managers}=await sb.from('managers').select('*');
     G.managers=managers||[];
+    // Load disponibilita for current year
+    const thisYear=new Date().getFullYear();
+    const {data:disp}=await sb.from('disponibilita').select('*')
+      .gte('data',thisYear+'-01-01').lte('data',thisYear+'-12-31');
+    G.disponibilita={};
+    (disp||[]).forEach(d=>{G.disponibilita[d.staff_id+'_'+d.data]=d;});
     migrateFabbisogno();
     setSyncStatus('ok');return true;
   }catch(e){console.error(e);setSyncStatus('err');return false;}
@@ -690,6 +697,11 @@ function renderApp(){
       <button class="btn primary" onclick="saveConfig()">Salva</button>
     </div>
     <!-- ARCHIVIO VERSIONI -->
+    <!-- DISPONIBILITA -->
+    <div id="sec-disponibilita" class="sec">
+      <div id="disp-content"></div>
+    </div>
+
     <!-- STAFF ARCHIVIATO -->
     <div id="sec-staff-archiviato" class="sec">
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Dipendenti rimossi. Riattivali per renderli nuovamente visibili nei turni e nella lista staff.</p>
@@ -763,7 +775,7 @@ function renderNav(){
     // Il manager di reparto non gestisce ne' i manager ne' i giorni di apertura
     tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
   } else {
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['disponibilita','La mia disponibilità']];
   }
   document.getElementById('main-nav').innerHTML=tabs.map(([id,label],i)=>`
     <button class="nav-btn ${i===0?'active':''}" onclick="goTab('${id}')">${label}</button>`).join('');
@@ -845,6 +857,7 @@ function goTab(t){
   if(t==='legenda')renderLegenda();
   if(t==='config')renderConfig();
   if(t==='settimane')renderWeekList();
+  if(t==='disponibilita')renderDisponibilita();
   if(t==='staff-archiviato')renderStaffArchiviato();
   if(t==='archivio')renderArchive();
   if(t==='managers')renderManagers();
@@ -1254,8 +1267,17 @@ function renderTurni(){
       const cs=val?shiftColorStyle(val):'';
       const hasOffReq=!extra&&c.servizio!=='cena'&&(p.offRequests||[]).includes(c.idx);
       const sKey=c.servizio==='pranzo'?`${c.idx},'${p.id}','pranzo'`:c.servizio==='cena'?`${c.idx},'${p.id}','cena'`:`${c.idx},'${p.id}',null`;
+      // Check disponibilita for extra staff
+      const weekDatesArr=getWeekDates(wk);
+      const dayDateStr=weekDatesArr?dateToStr(weekDatesArr[c.idx]):null;
+      const fasciaIds=c.servizio==='pranzo'?ALL_FASCE.filter(f=>f.tipo==='pranzo').map(f=>f.id)
+        :c.servizio==='cena'?ALL_FASCE.filter(f=>f.tipo==='cena').map(f=>f.id)
+        :ALL_FASCE.map(f=>f.id);
+      const isAvail=!val&&dayDateStr&&extra&&fasciaIds.some(fid=>hasDisp(p.id,dayDateStr,fid));
+      const cellBg=isAvail?'background:#dcfce7;':(!val&&hasOffReq?'background:#fff8dd;':'');
+      const cellTitle=isAvail?'Disponibile':hasOffReq?'Richiesta giorno libero':'';
       if(isManager()){
-        h+=`<td class="shift-cell" style="${cs}${!val&&hasOffReq?'background:#fff8dd;':''}" title="${hasOffReq?'Richiesta giorno libero':''}">
+        h+=`<td class="shift-cell" style="${cs}${cellBg}" title="${cellTitle}">
           <select onchange="setShift(${sKey},this.value)" style="width:66px;font-size:11px;padding:2px 3px;border:none;background:transparent;color:${val?shiftTextColor(val):'var(--text)'};font-family:inherit;font-weight:${val?'600':'400'};">
             <option value="" style="background:#fff;color:#1a1a1a;"></option>
             ${G.shifts.map(sh=>`<option value="${sh.code}" style="background:#fff;color:#1a1a1a;"${sh.code===val?' selected':''}>${sh.code}</option>`).join('')}
@@ -2515,6 +2537,205 @@ async function deleteManager(mid,name){
 
 
 
+
+// ===== DISPONIBILITA EXTRA =====
+
+function getDispKey(staffId, dateStr){ return staffId+'_'+dateStr; }
+
+function getDisp(staffId, dateStr){
+  return G.disponibilita[getDispKey(staffId, dateStr)]||null;
+}
+
+function hasDisp(staffId, dateStr, fasciaId){
+  const d=getDisp(staffId, dateStr);
+  if(!d)return false;
+  return !fasciaId||!d.fasce||!d.fasce.length||d.fasce.includes(fasciaId);
+}
+
+function dateToStr(date){
+  // Returns YYYY-MM-DD in local time
+  const y=date.getFullYear();
+  const m=String(date.getMonth()+1).padStart(2,'0');
+  const d=String(date.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+async function saveDisp(staffId, dateStr, fasce){
+  const id=getDispKey(staffId, dateStr).replace('_','-')+'-'+Date.now();
+  const row={id:'d'+Date.now()+Math.random().toString(36).slice(2,4),
+    staff_id:staffId, data:dateStr, fasce:fasce};
+  const {error}=await sb.from('disponibilita').upsert(row,{onConflict:'staff_id,data'});
+  if(!error){
+    G.disponibilita[getDispKey(staffId,dateStr)]=row;
+    return true;
+  }
+  console.error('saveDisp error:',error);
+  return false;
+}
+
+async function deleteDisp(staffId, dateStr){
+  const {error}=await sb.from('disponibilita').delete()
+    .eq('staff_id',staffId).eq('data',dateStr);
+  if(!error){
+    delete G.disponibilita[getDispKey(staffId,dateStr)];
+    return true;
+  }
+  return false;
+}
+
+function renderDisponibilita(){
+  const el=document.getElementById('disp-content');if(!el)return;
+
+  // Determine whose disponibilita to show
+  // Manager: can select any extra staff of their reparto
+  // Operatore (extra): sees only their own
+  const myStaff=G.allStaff.find(s=>s.accessCode&&s.accessCode===window._accessCode);
+  const canEditOthers=isManager();
+
+  // Build list of extra staff to show
+  const extraStaff=G.allStaff.filter(s=>isExtra(s)&&repOf(s)===REP&&s.attivo!==false);
+
+  // Current selected staff (for manager view)
+  if(!window._dispStaffId){
+    window._dispStaffId=myStaff?myStaff.id:(extraStaff[0]?.id||null);
+  }
+  const selStaffId=window._dispStaffId;
+  const selStaff=G.allStaff.find(s=>s.id===selStaffId);
+
+  // Build calendar: current month + next 2 months
+  const today=new Date();
+  const yearEnd=new Date(today.getFullYear(),11,31);
+
+  let html='';
+
+  // Staff selector (manager only)
+  if(canEditOthers&&extraStaff.length){
+    html+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:1rem;flex-wrap:wrap;">
+      <label style="font-size:12px;color:var(--text2);">Dipendente:</label>
+      <select onchange="window._dispStaffId=this.value;renderDisponibilita()"
+        style="font-size:12px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+        ${extraStaff.map(s=>`<option value="${s.id}"${s.id===selStaffId?' selected':''}>${s.name}</option>`).join('')}
+      </select>
+    </div>`;
+  }
+
+  if(!selStaff){
+    el.innerHTML='<p style="color:var(--text3);font-size:12px;">Nessun extra selezionato.</p>';
+    return;
+  }
+
+  html+=`<p style="font-size:14px;font-weight:500;margin-bottom:1rem;">Disponibilità di <b>${selStaff.name}</b></p>`;
+  html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Seleziona i giorni e le fasce in cui sei disponibile. Le celle verdi indicano la tua disponibilità nella griglia turni.</p>`;
+
+  // Calendar by month
+  const startMonth=new Date(today.getFullYear(), today.getMonth(), 1);
+  const endMonth=new Date(today.getFullYear(), 11, 1); // December
+
+  for(let m=new Date(startMonth); m<=endMonth; m.setMonth(m.getMonth()+1)){
+    const year=m.getFullYear();
+    const month=m.getMonth();
+    const monthName=MONTHS_IT[month]+' '+year;
+    const daysInMonth=new Date(year,month+1,0).getDate();
+
+    html+=`<div style="margin-bottom:1.5rem;">
+      <p style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">${monthName}</p>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">`;
+
+    // Day headers
+    ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].forEach(d=>{
+      html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);padding:4px 0;">${d}</div>`;
+    });
+
+    // Empty cells before first day
+    const firstDay=new Date(year,month,1).getDay();
+    const offset=firstDay===0?6:firstDay-1;
+    for(let i=0;i<offset;i++) html+='<div></div>';
+
+    // Days
+    for(let day=1;day<=daysInMonth;day++){
+      const date=new Date(year,month,day);
+      const dateStr=dateToStr(date);
+      const isPast=date<new Date(today.getFullYear(),today.getMonth(),today.getDate());
+      const disp=getDisp(selStaffId,dateStr);
+      const hasFull=disp&&(!disp.fasce||!disp.fasce.length);
+      const hasSome=disp&&disp.fasce&&disp.fasce.length>0;
+      const fasciaLabels=disp&&disp.fasce&&disp.fasce.length>0
+        ? disp.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label.slice(0,3):'';}).join(',')
+        : '';
+
+      let bg='#fff';let border='var(--border)';let textCol='var(--text)';
+      if(isPast){bg='var(--bg3)';textCol='var(--text3)';}
+      else if(hasFull){bg='#dcfce7';border='#86efac';}
+      else if(hasSome){bg='#f0fdf4';border='#86efac';}
+
+      const clickable=!isPast;
+      html+=`<div onclick="${clickable?`openDispDay('${selStaffId}','${dateStr}')`:''}"
+        style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:4px;min-height:48px;cursor:${clickable?'pointer':'default'};position:relative;">
+        <div style="font-size:10px;font-weight:600;color:${textCol};">${day}</div>
+        ${fasciaLabels?`<div style="font-size:8px;color:#16a34a;line-height:1.3;margin-top:2px;">${fasciaLabels}</div>`:''}
+        ${hasFull?`<div style="font-size:8px;color:#16a34a;">Tutto il giorno</div>`:''}
+      </div>`;
+    }
+    html+='</div></div>';
+  }
+
+  el.innerHTML=html;
+}
+
+function openDispDay(staffId, dateStr){
+  const disp=getDisp(staffId,dateStr);
+  const staff=G.allStaff.find(s=>s.id===staffId);
+  const dateObj=new Date(dateStr+'T12:00:00');
+  const dateLabel=dateObj.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+
+  // Build fascia checkboxes
+  const fascHtml=ALL_FASCE.map(f=>{
+    const checked=disp&&(!disp.fasce||!disp.fasce.length||disp.fasce.includes(f.id));
+    const cls=f.tipo==='pranzo'?'background:#fff8dd;':'background:#ddeeff;';
+    return `<label style="display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:var(--radius);${cls}cursor:pointer;font-size:12px;margin-bottom:4px;">
+      <input type="checkbox" id="disp-f-${f.id}" ${checked?'checked':''}>
+      ${f.label} <span style="color:var(--text3);font-size:10px;">${f.orario}</span>
+    </label>`;
+  }).join('');
+
+  const hasDisp=!!disp;
+
+  const popup=document.createElement('div');
+  popup.id='disp-popup';
+  popup.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:600;display:flex;align-items:center;justify-content:center;';
+  popup.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.5rem;width:340px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:4px;">${staff?staff.name:''}</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">${dateLabel}</p>
+    <p style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:8px;">Fasce disponibili:</p>
+    ${fascHtml}
+    <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap;">
+      <button class="btn primary" onclick="saveDispDay('${staffId}','${dateStr}')">Salva disponibilità</button>
+      ${hasDisp?`<button class="btn danger" onclick="deleteDispDay('${staffId}','${dateStr}')">Rimuovi</button>`:''}
+      <button class="btn" onclick="document.getElementById('disp-popup').remove()">Annulla</button>
+    </div>
+  </div>`;
+  document.body.appendChild(popup);
+  popup.addEventListener('click',e=>{if(e.target===popup)popup.remove();});
+}
+
+async function saveDispDay(staffId, dateStr){
+  const fasce=ALL_FASCE.filter(f=>{
+    const cb=document.getElementById('disp-f-'+f.id);
+    return cb&&cb.checked;
+  }).map(f=>f.id);
+  const ok=await saveDisp(staffId,dateStr,fasce);
+  document.getElementById('disp-popup')?.remove();
+  if(ok)renderDisponibilita();
+  else alert('Errore durante il salvataggio.');
+}
+
+async function deleteDispDay(staffId, dateStr){
+  if(!confirm('Rimuovere la disponibilità per questo giorno?'))return;
+  const ok=await deleteDisp(staffId,dateStr);
+  document.getElementById('disp-popup')?.remove();
+  if(ok)renderDisponibilita();
+  else alert('Errore durante la rimozione.');
+}
 
 // ===== PRESENZA ONLINE =====
 let presenceInterval=null;
