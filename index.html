@@ -637,6 +637,11 @@ function renderApp(){
         <div class="leg-sidebar"><h4>Legenda</h4><div id="leg-sidebar-giorno"></div></div>
       </div>
     </div>
+    <!-- DISPONIBILITA — visibile a tutti -->
+    <div id="sec-disponibilita" class="sec">
+      <div id="disp-content"></div>
+    </div>
+
     ${isManager()?`
     <div id="sec-staff" class="sec">
       <div class="staff-add">
@@ -700,11 +705,6 @@ function renderApp(){
       <button class="btn primary" onclick="saveConfig()">Salva</button>
     </div>
     <!-- ARCHIVIO VERSIONI -->
-    <!-- DISPONIBILITA -->
-    <div id="sec-disponibilita" class="sec">
-      <div id="disp-content"></div>
-    </div>
-
     <!-- STAFF ARCHIVIATO -->
     <div id="sec-staff-archiviato" class="sec">
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Dipendenti rimossi. Riattivali per renderli nuovamente visibili nei turni e nella lista staff.</p>
