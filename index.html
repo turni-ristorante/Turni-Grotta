@@ -348,6 +348,8 @@ const DEF_SHIFTS_CUCINA=[
 let G={
   disponibilita:{},
   richieste:[],
+  ferieFinestre:[],
+  ferieRichieste:[],
   staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
 let role='';let currentManager=null;let currentDipendente=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
 
@@ -405,23 +407,50 @@ async function dbLoad(){
     if(!G.currentWeekId||!G.weeks.find(w=>w.id===G.currentWeekId)){G.currentWeekId=G.weeks[0].id;await sb.from('config').upsert({key:'currentWeekId',value:G.currentWeekId});}
     const {data:managers}=await sb.from('managers').select('*');
     G.managers=managers||[];
-    // Load disponibilita for current year
-    try{
-      const thisYear=new Date().getFullYear();
-      const {data:disp}=await sb.from('disponibilita').select('*')
-        .gte('data',thisYear+'-01-01').lte('data',thisYear+'-12-31');
-      G.disponibilita={};
-      (disp||[]).forEach(d=>{G.disponibilita[d.staff_id+'_'+d.data]=d;});
-    }catch(e){console.log('disponibilita load error:',e);G.disponibilita={};}
-    // Load richieste turno
-    try{
-      const {data:rich}=await sb.from('richieste_turno').select('*').order('created_at',{ascending:false});
-      G.richieste=rich||[];
-    }catch(e){console.log('richieste load error:',e);G.richieste=[];}
     migrateFabbisogno();
-    setSyncStatus('ok');return true;
+    setSyncStatus('ok');
+    // I moduli aggiuntivi si caricano in background: se una di queste tabelle
+    // manca o e' lenta, l'app parte comunque.
+    loadModuliExtra();
+    return true;
   }catch(e){console.error(e);setSyncStatus('err');return false;}
 }
+// Carica disponibilita, richieste turno e ferie senza bloccare l'avvio.
+// Ogni tabella e' indipendente: se una manca, le altre funzionano lo stesso.
+async function loadModuliExtra(){
+  const anno=new Date().getFullYear();
+  try{
+    const {data,error}=await sb.from('disponibilita').select('*')
+      .gte('data',anno+'-01-01').lte('data',anno+'-12-31');
+    if(error)throw error;
+    G.disponibilita={};
+    (data||[]).forEach(d=>{G.disponibilita[d.staff_id+'_'+d.data]=d;});
+  }catch(e){console.log('disponibilita non disponibile:',e.message||e);G.disponibilita={};}
+  try{
+    const {data,error}=await sb.from('richieste_turno').select('*').order('created_at',{ascending:false});
+    if(error)throw error;
+    G.richieste=data||[];
+  }catch(e){console.log('richieste_turno non disponibile:',e.message||e);G.richieste=[];}
+  try{
+    const {data,error}=await sb.from('ferie_finestre').select('*').order('data_inizio');
+    if(error)throw error;
+    G.ferieFinestre=data||[];
+  }catch(e){console.log('ferie_finestre non disponibile:',e.message||e);G.ferieFinestre=[];}
+  try{
+    const {data,error}=await sb.from('ferie_richieste').select('*').order('created_at',{ascending:false});
+    if(error)throw error;
+    G.ferieRichieste=data||[];
+  }catch(e){console.log('ferie_richieste non disponibile:',e.message||e);G.ferieRichieste=[];}
+  // Aggiorna le viste che dipendono da questi dati, se sono gia' a schermo
+  try{
+    if(document.getElementById('sec-turni')?.classList.contains('active'))renderTurni();
+    if(document.getElementById('sec-ferie')?.classList.contains('active'))renderFerie();
+    if(document.getElementById('sec-richieste')?.classList.contains('active'))renderRichieste();
+    if(document.getElementById('sec-disponibilita')?.classList.contains('active'))renderDisponibilita();
+    updateRichiesteBadge();
+  }catch(e){}
+}
+
 function migrateFabbisogno(){
   // Ensure all fabbisogno keys are strings (old code used numeric keys)
   const newFab={};
@@ -644,6 +673,11 @@ function renderApp(){
         <div class="leg-sidebar"><h4>Legenda</h4><div id="leg-sidebar-giorno"></div></div>
       </div>
     </div>
+    <!-- FERIE — visibile a tutti -->
+    <div id="sec-ferie" class="sec">
+      <div id="ferie-content"></div>
+    </div>
+
     <!-- RICHIESTE TURNO — visibile a tutti -->
     <div id="sec-richieste" class="sec">
       <div id="richieste-content"></div>
@@ -785,9 +819,9 @@ function renderApp(){
 function renderNav(){
   let tabs;
   if(isResponsabile()){
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['ferie','Ferie'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
   } else if(isManager()){
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['ferie','Ferie'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
   } else {
     // Gli extra vedono solo la disponibilita, lo staff fisso solo le richieste turno
     const isExtraDip=currentDipendente&&isExtra(currentDipendente);
@@ -796,6 +830,7 @@ function renderNav(){
       tabs.push(['disponibilita','La mia disponibilità']);
     } else {
       tabs.push(['richieste','Le mie richieste']);
+      tabs.push(['ferie','Le mie ferie']);
     }
   }
   document.getElementById('main-nav').innerHTML=tabs.map(([id,label],i)=>`
@@ -881,6 +916,7 @@ function goTab(t){
   if(t==='legenda')renderLegenda();
   if(t==='config')renderConfig();
   if(t==='settimane')renderWeekList();
+  if(t==='ferie')renderFerie();
   if(t==='richieste')renderRichieste();
   if(t==='disponibilita')renderDisponibilita();
   if(t==='staff-archiviato')renderStaffArchiviato();
@@ -2564,6 +2600,729 @@ async function deleteManager(mid,name){
 
 
 
+
+// ===== FERIE =====
+
+function dataInFinestra(dateStr,tipo){
+  // Returns the finestra of given tipo that contains dateStr, for current reparto
+  return G.ferieFinestre.find(f=>
+    f.reparto===REP&&f.tipo===tipo&&dateStr>=f.data_inizio&&dateStr<=f.data_fine
+  )||null;
+}
+
+function puoChiedereFerie(dateStr){
+  // Blocked period → cannot request
+  if(dataInFinestra(dateStr,'bloccata'))return{ok:false,motivo:'Periodo bloccato'};
+  // If there are "aperta" windows defined, the date must fall in one
+  const finestreAperte=G.ferieFinestre.filter(f=>f.reparto===REP&&f.tipo==='aperta');
+  if(finestreAperte.length>0){
+    const oggi=dateToStr(new Date());
+    // Check if we're currently inside a request window that covers this date
+    const finestraValida=finestreAperte.find(f=>dateStr>=f.data_inizio&&dateStr<=f.data_fine);
+    if(!finestraValida)return{ok:false,motivo:'Fuori dai periodi richiedibili'};
+  }
+  return{ok:true};
+}
+
+function conteggioFeriePerGiorno(dateStr,reparto){
+  // Quante persone del reparto hanno quel giorno APPROVATO
+  let count=0;const nomi=[];
+  G.ferieRichieste.forEach(r=>{
+    const staff=G.allStaff.find(s=>s.id===r.staff_id);
+    if(!staff||repOf(staff)!==reparto)return;
+    if((r.giorni_approvati||[]).includes(dateStr)){count++;nomi.push(staff.name);}
+  });
+  return{count,nomi};
+}
+
+// Stato di un singolo giorno dentro una richiesta
+function statoGiornoFerie(r,dateStr){
+  if((r.giorni_approvati||[]).includes(dateStr))return'approvato';
+  if((r.giorni_rifiutati||[]).includes(dateStr))return'rifiutato';
+  return'attesa';
+}
+
+// Tutte le voci ferie del reparto corrente per un dato giorno
+function ferieDelGiorno(dateStr){
+  const out=[];
+  G.ferieRichieste.forEach(r=>{
+    if(!(r.giorni||[]).includes(dateStr))return;
+    const staff=G.allStaff.find(s=>s.id===r.staff_id);
+    if(!staff||repOf(staff)!==REP)return;
+    out.push({r,staff,stato:statoGiornoFerie(r,dateStr)});
+  });
+  return out;
+}
+
+// Ricalcola lo stato complessivo dai singoli giorni
+function statoComplessivoFerie(r){
+  const tot=(r.giorni||[]).length;
+  const app=(r.giorni_approvati||[]).length;
+  const rif=(r.giorni_rifiutati||[]).length;
+  if(app+rif<tot)return'in_attesa';
+  if(rif===0)return'approvata';
+  if(app===0)return'rifiutata';
+  return'parziale';
+}
+
+function renderFerie(){
+  const el=document.getElementById('ferie-content');if(!el)return;
+  if(isManager()){
+    renderFerieManager(el);
+  } else if(currentDipendente&&!isExtra(currentDipendente)){
+    renderFerieStaff(el);
+  } else {
+    el.innerHTML='<p style="color:var(--text3);font-size:12px;">Questa funzione è disponibile solo per lo staff fisso.</p>';
+  }
+}
+
+// ---------- VISTA MANAGER ----------
+function renderFerieManager(el){
+  if(window._ferieTab===undefined)window._ferieTab='richieste';
+  const tab=window._ferieTab;
+
+  let html=`<div style="display:flex;gap:4px;margin-bottom:1rem;background:var(--bg3);border-radius:var(--radius);padding:3px;width:fit-content;">
+    <button onclick="window._ferieTab='richieste';renderFerie()" style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;background:${tab==='richieste'?'#fff':'transparent'};color:${tab==='richieste'?'var(--text)':'var(--text2)'};font-weight:${tab==='richieste'?'500':'400'};">Richieste</button>
+    <button onclick="window._ferieTab='calendario';renderFerie()" style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;background:${tab==='calendario'?'#fff':'transparent'};color:${tab==='calendario'?'var(--text)':'var(--text2)'};font-weight:${tab==='calendario'?'500':'400'};">Calendario</button>
+    <button onclick="window._ferieTab='finestre';renderFerie()" style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;background:${tab==='finestre'?'#fff':'transparent'};color:${tab==='finestre'?'var(--text)':'var(--text2)'};font-weight:${tab==='finestre'?'500':'400'};">Periodi</button>
+  </div>`;
+
+  if(tab==='richieste')html+=buildFerieRichiesteHtml();
+  else if(tab==='calendario')html+=buildFerieCalendarioHtml();
+  else html+=buildFerieFinestreHtml();
+
+  el.innerHTML=html;
+}
+
+function buildFerieRichiesteHtml(){
+  const mieRichieste=G.ferieRichieste.filter(r=>{
+    const s=G.allStaff.find(s=>s.id===r.staff_id);
+    return s&&repOf(s)===REP;
+  });
+  const pending=mieRichieste.filter(r=>r.stato==='in_attesa');
+  const done=mieRichieste.filter(r=>r.stato!=='in_attesa');
+
+  let html='';
+  if(!mieRichieste.length)return '<p style="color:var(--text3);font-size:12px;">Nessuna richiesta ferie.</p>';
+
+  if(pending.length){
+    html+=`<p style="font-size:12px;font-weight:600;color:var(--orange-text);margin-bottom:8px;">&#9888; In attesa (${pending.length})</p>`;
+    html+=pending.map(r=>{
+      const staff=G.allStaff.find(s=>s.id===r.staff_id);
+      const giorni=r.giorni||[];
+      // Check overlaps
+      const conflitti=giorni.map(g=>{
+        const{count,nomi}=conteggioFeriePerGiorno(g,REP);
+        return count>0?{data:g,nomi}:null;
+      }).filter(Boolean);
+      return `<div style="background:#fff;border:0.5px solid var(--orange-border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;">
+            <div style="font-weight:500;">${staff?staff.name:'?'}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px;">${giorni.length} giorni richiesti</div>
+            <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:6px;">
+              ${giorni.map(g=>{
+                const d=new Date(g+'T12:00:00');
+                return `<span style="font-size:10px;background:var(--bg3);border:0.5px solid var(--border);padding:2px 6px;border-radius:4px;">${d.getDate()}/${d.getMonth()+1}</span>`;
+              }).join('')}
+            </div>
+            ${r.nota?`<p style="font-size:11px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3);border-radius:4px;">&#128172; ${r.nota}</p>`:''}
+            ${conflitti.length?`<div style="margin-top:8px;padding:8px 10px;background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:4px;">
+              <p style="font-size:11px;color:var(--yellow-text);font-weight:500;">&#9888; Sovrapposizioni:</p>
+              ${conflitti.map(c=>{
+                const d=new Date(c.data+'T12:00:00');
+                return `<p style="font-size:10px;color:var(--yellow-text);margin-top:2px;">${d.getDate()}/${d.getMonth()+1}: già ${c.nomi.join(', ')}</p>`;
+              }).join('')}
+            </div>`:''}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <button class="btn success" style="font-size:11px;padding:4px 10px;" onclick="approvaFerieTutto('${r.id}')">✓ Approva tutto</button>
+            <button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="approvaFerieParziale('${r.id}')">◐ Approva alcuni</button>
+            <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="rifiutaFerie('${r.id}')">✗ Rifiuta</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  if(done.length){
+    html+=`<p style="font-size:12px;font-weight:600;color:var(--text2);margin:1.25rem 0 8px;">Storico</p>`;
+    html+=done.slice(0,25).map(r=>{
+      const staff=G.allStaff.find(s=>s.id===r.staff_id);
+      const app=r.giorni_approvati||[];
+      const tot=(r.giorni||[]).length;
+      const statoColor=r.stato==='approvata'?'var(--green-text)':r.stato==='parziale'?'var(--orange-text)':'var(--red-text)';
+      const statoLabel=r.stato==='approvata'?'✓ Approvata':r.stato==='parziale'?`◐ Parziale (${app.length}/${tot})`:'✗ Rifiutata';
+      return `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <span style="font-weight:500;flex:1;">${staff?staff.name:'?'}</span>
+        <span style="font-size:11px;color:var(--text2);">${tot} giorni</span>
+        <span style="font-size:11px;font-weight:600;color:${statoColor};">${statoLabel}</span>
+        <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="riapriFerie('${r.id}')">↺ Riapri</button>
+      </div>`;
+    }).join('');
+  }
+  return html;
+}
+
+function buildFerieCalendarioHtml(){
+  const today=new Date();
+  if(window._ferieMonth===undefined)window._ferieMonth=today.getMonth();
+  const selMonth=window._ferieMonth;
+  const year=today.getFullYear();
+
+  let html='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:1rem;">';
+  for(let m=0;m<12;m++){
+    const active=m===selMonth;
+    html+=`<button onclick="window._ferieMonth=${m};renderFerie()"
+      style="padding:4px 10px;border-radius:var(--radius);border:0.5px solid var(--border);font-size:11px;cursor:pointer;font-family:inherit;background:${active?'var(--blue-bg)':'#fff'};color:${active?'var(--blue-text)':'var(--text2)'};font-weight:${active?'600':'400'};">
+      ${MONTHS_IT[m]}</button>`;
+  }
+  html+='</div>';
+
+  const month=selMonth;
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const firstDay=new Date(year,month,1).getDay();
+  const offset=firstDay===0?6:firstDay-1;
+
+  html+=`<p style="font-size:13px;font-weight:500;margin-bottom:0.75rem;">${MONTHS_IT[month]} ${year} — ${repLabel()}</p>`;
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;">';
+  ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].forEach(d=>{
+    html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);padding:4px 0;">${d}</div>`;
+  });
+  for(let i=0;i<offset;i++)html+='<div></div>';
+  for(let day=1;day<=daysInMonth;day++){
+    const dateStr=dateToStr(new Date(year,month,day));
+    const voci=ferieDelGiorno(dateStr);
+    const bloccata=dataInFinestra(dateStr,'bloccata');
+    const approvati=voci.filter(v=>v.stato==='approvato').length;
+    let bg='#fff';let border='var(--border)';
+    if(bloccata){bg='#fef2f2';border='var(--red-border)';}
+    else if(approvati>=2){bg='var(--orange-bg)';border='var(--orange-border)';}
+    html+=`<div style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:5px;min-height:70px;">
+      <div style="font-size:10px;font-weight:600;color:var(--text2);">${day}</div>
+      ${bloccata?'<div style="font-size:8px;color:var(--red-text);margin-top:2px;">Bloccato</div>':''}
+      ${voci.map(v=>{
+        const st=v.stato==='approvato'?'background:var(--green-bg);border-color:var(--green-border);color:var(--green-text);'
+          :v.stato==='rifiutato'?'background:var(--red-bg);border-color:var(--red-border);color:var(--red-text);'
+          :'background:var(--yellow-bg);border-color:var(--yellow-border);color:var(--yellow-text);';
+        const tip=v.stato==='approvato'?'Approvata':v.stato==='rifiutato'?'Rifiutata':'Da decidere';
+        return `<div onclick="apriPopupFerieGiorno('${v.r.id}','${dateStr}')" title="${v.staff.name} — ${tip}"
+          style="font-size:9px;border:0.5px solid;border-radius:3px;padding:1px 4px;margin-top:2px;cursor:pointer;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${st}">${v.staff.name}</div>`;
+      }).join('')}
+    </div>`;
+  }
+  html+='</div>';
+  html+=`<div style="display:flex;gap:12px;margin-top:1rem;flex-wrap:wrap;font-size:11px;color:var(--text2);">
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:3px;vertical-align:middle;"></span> Da decidere</span>
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--green-bg);border:0.5px solid var(--green-border);border-radius:3px;vertical-align:middle;"></span> Approvata</span>
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--red-bg);border:0.5px solid var(--red-border);border-radius:3px;vertical-align:middle;"></span> Rifiutata</span>
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--orange-bg);border:0.5px solid var(--orange-border);border-radius:3px;vertical-align:middle;"></span> 2+ approvate</span>
+  </div>
+  <p style="font-size:11px;color:var(--text3);margin-top:6px;">Clicca su un nome per approvare o rifiutare.</p>`;
+  return html;
+}
+
+// ---------- POPUP DECISIONE DAL CALENDARIO ----------
+function apriPopupFerieGiorno(richiestaId,dateStr){
+  const r=G.ferieRichieste.find(x=>x.id===richiestaId);if(!r)return;
+  const staff=G.allStaff.find(s=>s.id===r.staff_id);
+  const d=new Date(dateStr+'T12:00:00');
+  const dataLabel=d.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+  const st=statoGiornoFerie(r,dateStr);
+  const giorni=r.giorni||[];
+  const app=(r.giorni_approvati||[]).length;
+  const rif=(r.giorni_rifiutati||[]).length;
+  const attesa=giorni.length-app-rif;
+  const stLabel=st==='approvato'?'Approvato':st==='rifiutato'?'Rifiutato':'Da decidere';
+  const stStyle=st==='approvato'?'background:var(--green-bg);color:var(--green-text);border-color:var(--green-border);'
+    :st==='rifiutato'?'background:var(--red-bg);color:var(--red-text);border-color:var(--red-border);'
+    :'background:var(--yellow-bg);color:var(--yellow-text);border-color:var(--yellow-border);';
+  const{count,nomi}=conteggioFeriePerGiorno(dateStr,REP);
+  const altri=nomi.filter(n=>n!==(staff?staff.name:''));
+
+  const popup=document.createElement('div');
+  popup.id='ferie-day-popup';
+  popup.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:600;display:flex;align-items:center;justify-content:center;';
+  popup.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.5rem;width:360px;max-width:95vw;max-height:85vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:2px;">${staff?staff.name:'?'}</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">${dataLabel}</p>
+    <span style="font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;border:0.5px solid;${stStyle}">${stLabel}</span>
+    ${altri.length?`<p style="font-size:11px;color:var(--yellow-text);background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:4px;padding:6px 8px;margin-top:10px;">&#9888; Anche in ferie: ${altri.join(', ')}</p>`:''}
+    ${r.nota?`<p style="font-size:11px;color:var(--text2);background:var(--bg3);border-radius:4px;padding:6px 8px;margin-top:10px;">&#128172; ${r.nota}</p>`:''}
+
+    <p style="font-size:11px;font-weight:600;color:var(--text2);margin:14px 0 6px;">Solo questo giorno</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      ${st!=='approvato'?`<button class="btn success" style="font-size:11px;padding:5px 12px;" onclick="decidiGiornoFerie('${r.id}','${dateStr}','approvato')">&#10003; Approva giorno</button>`:''}
+      ${st!=='rifiutato'?`<button class="btn danger" style="font-size:11px;padding:5px 12px;" onclick="decidiGiornoFerie('${r.id}','${dateStr}','rifiutato')">&#10007; Rifiuta giorno</button>`:''}
+      ${st!=='attesa'?`<button class="btn" style="font-size:11px;padding:5px 12px;" onclick="decidiGiornoFerie('${r.id}','${dateStr}','attesa')">&#8634; Rimetti in attesa</button>`:''}
+    </div>
+
+    <hr style="border:none;border-top:0.5px solid var(--border);margin:14px 0;">
+    <p style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Intera richiesta</p>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:8px;">${giorni.length} giorni — ${app} approvati, ${rif} rifiutati, ${attesa} da decidere</p>
+    <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:10px;">
+      ${giorni.map(g=>{
+        const gd=new Date(g+'T12:00:00');
+        const gs=statoGiornoFerie(r,g);
+        const cls=gs==='approvato'?'background:var(--green-bg);border-color:var(--green-border);'
+          :gs==='rifiutato'?'background:var(--red-bg);border-color:var(--red-border);'
+          :'background:var(--yellow-bg);border-color:var(--yellow-border);';
+        const cur=g===dateStr?'font-weight:700;':'';
+        return `<span style="font-size:10px;border:0.5px solid;padding:2px 6px;border-radius:4px;${cls}${cur}">${gd.getDate()}/${gd.getMonth()+1}</span>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <button class="btn success" style="font-size:11px;padding:5px 12px;" onclick="decidiTuttaRichiesta('${r.id}','approvato')">&#10003; Approva tutto</button>
+      <button class="btn danger" style="font-size:11px;padding:5px 12px;" onclick="decidiTuttaRichiesta('${r.id}','rifiutato')">&#10007; Rifiuta tutto</button>
+    </div>
+
+    <button class="btn" style="margin-top:14px;width:100%;" onclick="document.getElementById('ferie-day-popup').remove()">Chiudi</button>
+  </div>`;
+  document.body.appendChild(popup);
+  popup.addEventListener('click',e=>{if(e.target===popup)popup.remove();});
+}
+
+async function salvaDecisioneFerie(r){
+  r.stato=statoComplessivoFerie(r);
+  await sb.from('ferie_richieste').update({
+    giorni_approvati:r.giorni_approvati||[],
+    giorni_rifiutati:r.giorni_rifiutati||[],
+    stato:r.stato,
+    updated_at:new Date().toISOString()
+  }).eq('id',r.id);
+}
+
+async function decidiGiornoFerie(id,dateStr,esito){
+  const r=G.ferieRichieste.find(x=>x.id===id);if(!r)return;
+  r.giorni_approvati=(r.giorni_approvati||[]).filter(g=>g!==dateStr);
+  r.giorni_rifiutati=(r.giorni_rifiutati||[]).filter(g=>g!==dateStr);
+  if(esito==='approvato')r.giorni_approvati.push(dateStr);
+  if(esito==='rifiutato')r.giorni_rifiutati.push(dateStr);
+  try{
+    await salvaDecisioneFerie(r);
+    if(esito==='approvato')await scriviFerieInGriglia(r.staff_id,[dateStr]);
+    else await rimuoviFerieDaGriglia(r.staff_id,[dateStr]);
+    document.getElementById('ferie-day-popup')?.remove();
+    renderFerie();
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+async function decidiTuttaRichiesta(id,esito){
+  const r=G.ferieRichieste.find(x=>x.id===id);if(!r)return;
+  const giorni=r.giorni||[];
+  const verbo=esito==='approvato'?'Approvare':'Rifiutare';
+  if(!confirm(`${verbo} tutti i ${giorni.length} giorni della richiesta?`))return;
+  if(esito==='approvato'){r.giorni_approvati=[...giorni];r.giorni_rifiutati=[];}
+  else{r.giorni_approvati=[];r.giorni_rifiutati=[...giorni];}
+  try{
+    await salvaDecisioneFerie(r);
+    if(esito==='approvato')await scriviFerieInGriglia(r.staff_id,giorni);
+    else await rimuoviFerieDaGriglia(r.staff_id,giorni);
+    document.getElementById('ferie-day-popup')?.remove();
+    renderFerie();
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+// Toglie FERIE dalla griglia solo dove c'e' scritto FERIE, senza toccare altri turni
+async function rimuoviFerieDaGriglia(staffId,giorni){
+  const perSettimana={};
+  giorni.forEach(g=>{
+    const d=new Date(g+'T12:00:00');
+    const wk=G.weeks.find(w=>{
+      if(!w.startDate)return false;
+      const start=new Date(w.startDate+'T12:00:00');
+      const end=new Date(start);end.setDate(end.getDate()+6);
+      return d>=start&&d<=end;
+    });
+    if(!wk)return;
+    const di=Math.round((d-new Date(wk.startDate+'T12:00:00'))/(1000*60*60*24));
+    if(!perSettimana[wk.id])perSettimana[wk.id]={wk,dis:[]};
+    perSettimana[wk.id].dis.push(di);
+  });
+  for(const key of Object.keys(perSettimana)){
+    const{wk,dis}=perSettimana[key];
+    let cambiato=false;
+    dis.forEach(di=>{
+      const giorno=wk.shift_assign[di];if(!giorno)return;
+      [staffId,staffId+'_P',staffId+'_C'].forEach(k=>{
+        if(giorno[k]==='FERIE'){delete giorno[k];cambiato=true;}
+      });
+    });
+    if(cambiato)await dbSaveWeek(wk);
+  }
+}
+
+function buildFerieFinestreHtml(){
+  const mie=G.ferieFinestre.filter(f=>f.reparto===REP);
+  let html=`<p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">Definisci i periodi in cui è possibile o vietato richiedere ferie per ${repLabel()}.</p>`;
+
+  html+=`<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;">
+    <p style="font-size:12px;font-weight:500;margin-bottom:8px;">Nuovo periodo</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+      <div><label style="font-size:10px;color:var(--text2);display:block;">Tipo</label>
+        <select id="fin-tipo" style="padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-size:12px;font-family:inherit;background:#fff;">
+          <option value="aperta">Richieste aperte</option>
+          <option value="bloccata">Ferie bloccate</option>
+        </select></div>
+      <div><label style="font-size:10px;color:var(--text2);display:block;">Dal</label>
+        <input type="date" id="fin-inizio" style="padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-size:12px;font-family:inherit;"></div>
+      <div><label style="font-size:10px;color:var(--text2);display:block;">Al</label>
+        <input type="date" id="fin-fine" style="padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-size:12px;font-family:inherit;"></div>
+      <div><label style="font-size:10px;color:var(--text2);display:block;">Nota</label>
+        <input type="text" id="fin-nota" placeholder="opzionale" style="padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-size:12px;font-family:inherit;width:140px;"></div>
+      <button class="btn primary" onclick="aggiungiFinestra()">+ Aggiungi</button>
+    </div>
+  </div>`;
+
+  if(!mie.length)return html+'<p style="color:var(--text3);font-size:12px;">Nessun periodo definito. Senza periodi aperti, le ferie si possono chiedere sempre (tranne nei periodi bloccati).</p>';
+
+  html+=mie.map(f=>{
+    const di=new Date(f.data_inizio+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'});
+    const df=new Date(f.data_fine+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'});
+    const isBlock=f.tipo==='bloccata';
+    return `<div style="background:${isBlock?'var(--red-bg)':'var(--green-bg)'};border:0.5px solid ${isBlock?'var(--red-border)':'var(--green-border)'};border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <span style="font-size:11px;font-weight:600;color:${isBlock?'var(--red-text)':'var(--green-text)'};padding:2px 8px;border-radius:20px;background:#fff;">${isBlock?'Bloccato':'Aperto'}</span>
+      <span style="flex:1;font-size:12px;">${di} → ${df}</span>
+      ${f.nota?`<span style="font-size:11px;color:var(--text2);">${f.nota}</span>`:''}
+      <button class="btn danger" style="font-size:10px;padding:3px 8px;" onclick="eliminaFinestra('${f.id}')">Rimuovi</button>
+    </div>`;
+  }).join('');
+  return html;
+}
+
+async function aggiungiFinestra(){
+  const tipo=document.getElementById('fin-tipo').value;
+  const inizio=document.getElementById('fin-inizio').value;
+  const fine=document.getElementById('fin-fine').value;
+  const nota=document.getElementById('fin-nota').value.trim();
+  if(!inizio||!fine){alert('Inserisci data inizio e fine.');return;}
+  if(fine<inizio){alert('La data di fine deve essere successiva a quella di inizio.');return;}
+  const row={id:'f'+Date.now()+Math.random().toString(36).slice(2,5),
+    reparto:REP,tipo,data_inizio:inizio,data_fine:fine,nota:nota||null};
+  try{
+    const {error}=await sb.from('ferie_finestre').insert(row);
+    if(error){alert('Errore: '+error.message);return;}
+    G.ferieFinestre.push(row);
+    renderFerie();
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+async function eliminaFinestra(id){
+  if(!confirm('Rimuovere questo periodo?'))return;
+  try{
+    await sb.from('ferie_finestre').delete().eq('id',id);
+    G.ferieFinestre=G.ferieFinestre.filter(f=>f.id!==id);
+    renderFerie();
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+// ---------- APPROVAZIONE ----------
+async function scriviFerieInGriglia(staffId,giorni){
+  // Writes FERIE in the shift grid for the given days, respecting day_config
+  const perSettimana={};
+  giorni.forEach(g=>{
+    const d=new Date(g+'T12:00:00');
+    const wk=G.weeks.find(w=>{
+      if(!w.startDate)return false;
+      const start=new Date(w.startDate+'T12:00:00');
+      const end=new Date(start);end.setDate(end.getDate()+6);
+      return d>=start&&d<=end;
+    });
+    if(!wk)return;
+    const di=Math.round((d-new Date(wk.startDate+'T12:00:00'))/(1000*60*60*24));
+    // Skip closed days
+    if(wk.day_config[di]==='chiuso')return;
+    if(!perSettimana[wk.id])perSettimana[wk.id]={wk,giorni:[]};
+    perSettimana[wk.id].giorni.push(di);
+  });
+  for(const key of Object.keys(perSettimana)){
+    const{wk,giorni:dis}=perSettimana[key];
+    dis.forEach(di=>{
+      if(!wk.shift_assign[di])wk.shift_assign[di]={};
+      const tipo=wk.day_config[di];
+      if(tipo==='pranzo_cena'){
+        wk.shift_assign[di][staffId+'_P']='FERIE';
+        wk.shift_assign[di][staffId+'_C']='FERIE';
+      } else {
+        wk.shift_assign[di][staffId]='FERIE';
+      }
+    });
+    await dbSaveWeek(wk);
+  }
+  return Object.keys(perSettimana).length;
+}
+
+async function approvaFerieTutto(id){
+  await decidiTuttaRichiesta(id,'approvato');
+}
+
+function approvaFerieParziale(id){
+  const r=G.ferieRichieste.find(r=>r.id===id);if(!r)return;
+  const staff=G.allStaff.find(s=>s.id===r.staff_id);
+  const giorni=r.giorni||[];
+  const popup=document.createElement('div');
+  popup.id='ferie-parz-popup';
+  popup.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:600;display:flex;align-items:center;justify-content:center;';
+  popup.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.5rem;width:380px;max-width:95vw;max-height:85vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:4px;">Approvazione parziale</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">${staff?staff.name:''} — seleziona i giorni da approvare</p>
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      ${giorni.map(g=>{
+        const d=new Date(g+'T12:00:00');
+        const label=d.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
+        const{count,nomi}=conteggioFeriePerGiorno(g,REP);
+        return `<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--radius);background:${count>0?'var(--yellow-bg)':'var(--bg3)'};cursor:pointer;font-size:12px;">
+          <input type="checkbox" class="ferie-day-cb" value="${g}" checked>
+          <span style="flex:1;">${label}</span>
+          ${count>0?`<span style="font-size:10px;color:var(--yellow-text);">${nomi.join(', ')}</span>`:''}
+        </label>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:1rem;">
+      <button class="btn primary" onclick="confermaFerieParziale('${id}')">Approva selezionati</button>
+      <button class="btn" onclick="document.getElementById('ferie-parz-popup').remove()">Annulla</button>
+    </div>
+  </div>`;
+  document.body.appendChild(popup);
+  popup.addEventListener('click',e=>{if(e.target===popup)popup.remove();});
+}
+
+async function confermaFerieParziale(id){
+  const r=G.ferieRichieste.find(r=>r.id===id);if(!r)return;
+  const selezionati=[...document.querySelectorAll('.ferie-day-cb:checked')].map(cb=>cb.value);
+  if(!selezionati.length){alert('Seleziona almeno un giorno.');return;}
+  const scartati=(r.giorni||[]).filter(g=>!selezionati.includes(g));
+  r.giorni_approvati=selezionati;
+  r.giorni_rifiutati=scartati;
+  try{
+    await salvaDecisioneFerie(r);
+    document.getElementById('ferie-parz-popup')?.remove();
+    await scriviFerieInGriglia(r.staff_id,selezionati);
+    if(scartati.length)await rimuoviFerieDaGriglia(r.staff_id,scartati);
+    renderFerie();
+    alert(selezionati.length+' giorni approvati, '+scartati.length+' rifiutati.');
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+async function rifiutaFerie(id){
+  const r=G.ferieRichieste.find(r=>r.id===id);if(!r)return;
+  const nota=prompt('Motivo del rifiuto (opzionale):');
+  if(nota===null)return;
+  r.giorni_approvati=[];
+  r.giorni_rifiutati=[...(r.giorni||[])];
+  r.risposta_nota=nota||null;
+  try{
+    await salvaDecisioneFerie(r);
+    await sb.from('ferie_richieste').update({risposta_nota:nota||null}).eq('id',id);
+    await rimuoviFerieDaGriglia(r.staff_id,r.giorni||[]);
+    renderFerie();
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+async function riapriFerie(id){
+  const r=G.ferieRichieste.find(r=>r.id===id);if(!r)return;
+  if(!confirm('Riportare questa richiesta in attesa?\nNota: i FERIE già scritti nella griglia non vengono rimossi automaticamente.'))return;
+  try{
+    await sb.from('ferie_richieste').update({stato:'in_attesa',risposta_nota:null,giorni_approvati:[],giorni_rifiutati:[],updated_at:new Date().toISOString()}).eq('id',id);
+    await rimuoviFerieDaGriglia(r.staff_id,r.giorni||[]);
+    r.stato='in_attesa';r.risposta_nota=null;r.giorni_approvati=[];r.giorni_rifiutati=[];
+    renderFerie();
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+// ---------- VISTA STAFF ----------
+function renderFerieStaff(el){
+  const staffId=currentDipendente.id;
+  const mie=G.ferieRichieste.filter(r=>r.staff_id===staffId);
+  const today=new Date();
+  if(window._ferieStaffMonth===undefined)window._ferieStaffMonth=today.getMonth();
+  if(!window._ferieSelezione)window._ferieSelezione=[];
+
+  const selMonth=window._ferieStaffMonth;
+  const year=today.getFullYear();
+
+  let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.5rem;">Le mie ferie</p>`;
+
+  // Show open windows info
+  const finestreAperte=G.ferieFinestre.filter(f=>f.reparto===REP&&f.tipo==='aperta');
+  const bloccate=G.ferieFinestre.filter(f=>f.reparto===REP&&f.tipo==='bloccata');
+  if(finestreAperte.length){
+    html+=`<div style="background:var(--green-bg);border:0.5px solid var(--green-border);border-radius:var(--radius);padding:10px 14px;margin-bottom:0.75rem;">
+      <p style="font-size:11px;color:var(--green-text);font-weight:500;">Periodi richiedibili:</p>
+      ${finestreAperte.map(f=>{
+        const di=new Date(f.data_inizio+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'});
+        const df=new Date(f.data_fine+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'});
+        return `<p style="font-size:11px;color:var(--green-text);">${di} → ${df}${f.nota?' ('+f.nota+')':''}</p>`;
+      }).join('')}
+    </div>`;
+  }
+  if(bloccate.length){
+    html+=`<div style="background:var(--red-bg);border:0.5px solid var(--red-border);border-radius:var(--radius);padding:10px 14px;margin-bottom:0.75rem;">
+      <p style="font-size:11px;color:var(--red-text);font-weight:500;">Periodi bloccati:</p>
+      ${bloccate.map(f=>{
+        const di=new Date(f.data_inizio+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'});
+        const df=new Date(f.data_fine+'T12:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'short'});
+        return `<p style="font-size:11px;color:var(--red-text);">${di} → ${df}${f.nota?' ('+f.nota+')':''}</p>`;
+      }).join('')}
+    </div>`;
+  }
+
+  html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Clicca sui giorni per selezionarli, poi invia la richiesta.</p>`;
+
+  // Month tabs
+  html+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:1rem;">';
+  for(let m=0;m<12;m++){
+    const active=m===selMonth;
+    const isPastMonth=m<today.getMonth();
+    html+=`<button onclick="window._ferieStaffMonth=${m};renderFerie()"
+      style="padding:4px 10px;border-radius:var(--radius);border:0.5px solid var(--border);font-size:11px;cursor:pointer;font-family:inherit;background:${active?'var(--blue-bg)':'#fff'};color:${active?'var(--blue-text)':isPastMonth?'var(--text3)':'var(--text2)'};font-weight:${active?'600':'400'};opacity:${isPastMonth?0.5:1};">
+      ${MONTHS_IT[m]}</button>`;
+  }
+  html+='</div>';
+
+  // Calendar
+  const month=selMonth;
+  const daysInMonth=new Date(year,month+1,0).getDate();
+  const firstDay=new Date(year,month,1).getDay();
+  const offset=firstDay===0?6:firstDay-1;
+
+  html+=`<p style="font-size:13px;font-weight:500;margin-bottom:0.75rem;">${MONTHS_IT[month]} ${year}</p>`;
+  html+='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:1rem;">';
+  ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].forEach(d=>{
+    html+=`<div style="text-align:center;font-size:10px;font-weight:600;color:var(--text3);padding:4px 0;">${d}</div>`;
+  });
+  for(let i=0;i<offset;i++)html+='<div></div>';
+  for(let day=1;day<=daysInMonth;day++){
+    const date=new Date(year,month,day);
+    const dateStr=dateToStr(date);
+    const isPast=date<new Date(today.getFullYear(),today.getMonth(),today.getDate());
+    const check=puoChiedereFerie(dateStr);
+    const selected=window._ferieSelezione.includes(dateStr);
+    // Already requested?
+    const giaRichiesto=mie.find(r=>(r.giorni||[]).includes(dateStr));
+    let bg='#fff';let border='var(--border)';let label='';
+    if(isPast){bg='var(--bg3)';}
+    else if(giaRichiesto){
+      const sg=statoGiornoFerie(giaRichiesto,dateStr);
+      if(sg==='approvato'){bg='var(--green-bg)';border='var(--green-border)';label='Approvata';}
+      else if(sg==='rifiutato'){bg='var(--red-bg)';border='var(--red-border)';label='Rifiutata';}
+      else {bg='var(--yellow-bg)';border='var(--yellow-border)';label='In attesa';}
+    }
+    else if(selected){bg='var(--blue-bg)';border='var(--blue-border)';}
+    else if(!check.ok){bg='var(--bg3)';border='var(--border)';}
+    const clickable=!isPast&&!giaRichiesto&&check.ok;
+    html+=`<div onclick="${clickable?`toggleFerieDay('${dateStr}')`:''}"
+      title="${!check.ok?check.motivo:''}"
+      style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:5px;min-height:52px;cursor:${clickable?'pointer':'default'};opacity:${!clickable&&!giaRichiesto?0.5:1};">
+      <div style="font-size:11px;font-weight:600;">${day}</div>
+      ${selected?'<div style="font-size:9px;color:var(--blue-text);margin-top:2px;">✓</div>':''}
+      ${label?`<div style="font-size:8px;margin-top:2px;">${label}</div>`:''}
+    </div>`;
+  }
+  html+='</div>';
+
+  // Selection summary + submit
+  if(window._ferieSelezione.length){
+    html+=`<div style="background:var(--blue-bg);border:0.5px solid var(--blue-border);border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;">
+      <p style="font-size:12px;color:var(--blue-text);font-weight:500;margin-bottom:8px;">${window._ferieSelezione.length} giorni selezionati</p>
+      <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:10px;">
+        ${window._ferieSelezione.sort().map(g=>{
+          const d=new Date(g+'T12:00:00');
+          return `<span style="font-size:10px;background:#fff;border:0.5px solid var(--blue-border);padding:2px 7px;border-radius:4px;">${d.getDate()}/${d.getMonth()+1}</span>`;
+        }).join('')}
+      </div>
+      <textarea id="ferie-nota" placeholder="Nota (opzionale)" rows="2" style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:12px;resize:none;margin-bottom:8px;"></textarea>
+      <div style="display:flex;gap:8px;">
+        <button class="btn primary" onclick="inviaRichiestaFerie()">Invia richiesta</button>
+        <button class="btn" onclick="window._ferieSelezione=[];renderFerie()">Annulla selezione</button>
+      </div>
+    </div>`;
+  }
+
+  // My requests history
+  if(mie.length){
+    html+=`<p style="font-size:12px;font-weight:500;margin:1rem 0 8px;">Le mie richieste</p>`;
+    html+=mie.map(r=>{
+      const giorni=r.giorni||[];
+      const app=r.giorni_approvati||[];
+      const statoStyle=r.stato==='in_attesa'?'background:var(--yellow-bg);color:var(--yellow-text);border-color:var(--yellow-border);'
+        :r.stato==='approvata'?'background:var(--green-bg);color:var(--green-text);border-color:var(--green-border);'
+        :r.stato==='parziale'?'background:var(--orange-bg);color:var(--orange-text);border-color:var(--orange-border);'
+        :'background:var(--red-bg);color:var(--red-text);border-color:var(--red-border);';
+      const statoLabel=r.stato==='in_attesa'?'⏳ In attesa':r.stato==='approvata'?'✓ Approvata':r.stato==='parziale'?`◐ Parziale (${app.length}/${giorni.length})`:'✗ Rifiutata';
+      return `<div style="background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="flex:1;font-size:12px;font-weight:500;">${giorni.length} giorni richiesti</span>
+          <span style="font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;border:0.5px solid;${statoStyle}">${statoLabel}</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;">
+          ${giorni.map(g=>{
+            const d=new Date(g+'T12:00:00');
+            const ok=app.includes(g);
+            return `<span style="font-size:10px;background:${ok?'var(--green-bg)':'var(--bg3)'};border:0.5px solid ${ok?'var(--green-border)':'var(--border)'};padding:2px 6px;border-radius:4px;">${d.getDate()}/${d.getMonth()+1}</span>`;
+          }).join('')}
+        </div>
+        ${r.nota?`<p style="font-size:11px;color:var(--text3);margin-top:6px;">${r.nota}</p>`:''}
+        ${r.risposta_nota?`<p style="font-size:11px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3);border-radius:4px;">Risposta: ${r.risposta_nota}</p>`:''}
+        ${r.stato==='in_attesa'?`<div style="display:flex;gap:6px;margin-top:8px;">
+          <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="modificaFerie('${r.id}')">✎ Modifica</button>
+          <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="annullaFerie('${r.id}')">✗ Annulla</button>
+        </div>`:''}
+      </div>`;
+    }).join('');
+  }
+
+  el.innerHTML=html;
+}
+
+function toggleFerieDay(dateStr){
+  if(!window._ferieSelezione)window._ferieSelezione=[];
+  const i=window._ferieSelezione.indexOf(dateStr);
+  if(i>=0)window._ferieSelezione.splice(i,1);
+  else window._ferieSelezione.push(dateStr);
+  renderFerie();
+}
+
+async function inviaRichiestaFerie(){
+  const giorni=[...window._ferieSelezione].sort();
+  if(!giorni.length){alert('Seleziona almeno un giorno.');return;}
+  const nota=document.getElementById('ferie-nota')?.value.trim()||'';
+  const row={
+    id:'fr'+Date.now()+Math.random().toString(36).slice(2,5),
+    staff_id:currentDipendente.id,giorni,giorni_approvati:[],
+    nota:nota||null,stato:'in_attesa',
+    created_at:new Date().toISOString(),updated_at:new Date().toISOString()
+  };
+  try{
+    const {error}=await sb.from('ferie_richieste').insert(row);
+    if(error){alert('Errore: '+error.message);return;}
+    G.ferieRichieste.unshift(row);
+    window._ferieSelezione=[];
+    renderFerie();
+    alert('Richiesta ferie inviata!');
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+function modificaFerie(id){
+  const r=G.ferieRichieste.find(r=>r.id===id);if(!r)return;
+  if(r.stato!=='in_attesa'){alert('Non puoi modificare una richiesta già decisa.');return;}
+  // Load the days back into selection and delete the old request
+  if(!confirm('Modificare questa richiesta?\nI giorni torneranno selezionabili nel calendario.'))return;
+  window._ferieSelezione=[...(r.giorni||[])];
+  annullaFerie(id,true);
+}
+
+async function annullaFerie(id,silent){
+  const r=G.ferieRichieste.find(r=>r.id===id);if(!r)return;
+  if(r.stato!=='in_attesa'){alert('Non puoi annullare una richiesta già decisa.');return;}
+  if(!silent&&!confirm('Annullare questa richiesta ferie?'))return;
+  try{
+    await sb.from('ferie_richieste').delete().eq('id',id);
+    G.ferieRichieste=G.ferieRichieste.filter(x=>x.id!==id);
+    renderFerie();
+    if(!silent)alert('Richiesta annullata.');
+  }catch(e){alert('Errore: '+e.message);}
+}
 
 // ===== RICHIESTE TURNO =====
 
