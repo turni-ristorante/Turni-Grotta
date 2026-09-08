@@ -347,6 +347,7 @@ const DEF_SHIFTS_CUCINA=[
 
 let G={
   disponibilita:{},
+  richieste:[],
   staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
 let role='';let currentManager=null;let currentDipendente=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
 
@@ -412,6 +413,11 @@ async function dbLoad(){
       G.disponibilita={};
       (disp||[]).forEach(d=>{G.disponibilita[d.staff_id+'_'+d.data]=d;});
     }catch(e){console.log('disponibilita load error:',e);G.disponibilita={};}
+    // Load richieste turno
+    try{
+      const {data:rich}=await sb.from('richieste_turno').select('*').order('created_at',{ascending:false});
+      G.richieste=rich||[];
+    }catch(e){console.log('richieste load error:',e);G.richieste=[];}
     migrateFabbisogno();
     setSyncStatus('ok');return true;
   }catch(e){console.error(e);setSyncStatus('err');return false;}
@@ -602,6 +608,7 @@ function renderApp(){
         <button class="btn primary" style="font-size:11px;padding:4px 10px;" onclick="goTab('settimane')">Settimane</button>`
       :`<select class="week-selector" id="week-selector-dep" onchange="switchWeekDep(this.value)" style="max-width:220px;"></select>`}
       <span id="sync-status" class="sync-status ${syncStatus==='ok'?'ok':'err'}">${syncStatus==='ok'?'● Sincronizzato':'● ...'}</span>
+      <span id="richieste-badge" style="display:none;"></span>
       ${isManager()?`<button class="btn success" id="save-btn" style="font-size:12px;padding:5px 16px;font-weight:600;" onclick="saveAll()">💾 Salva</button>
         <button class="btn" id="reload-btn" title="Ricarica dati dal server" style="font-size:12px;padding:5px 10px;" onclick="reloadFromServer()">🔄</button>`:''}
       <span id="online-badge" style="font-size:11px;color:var(--text2);"></span>
@@ -637,6 +644,11 @@ function renderApp(){
         <div class="leg-sidebar"><h4>Legenda</h4><div id="leg-sidebar-giorno"></div></div>
       </div>
     </div>
+    <!-- RICHIESTE TURNO — visibile a tutti -->
+    <div id="sec-richieste" class="sec">
+      <div id="richieste-content"></div>
+    </div>
+
     <!-- DISPONIBILITA — visibile a tutti -->
     <div id="sec-disponibilita" class="sec">
       <div id="disp-content"></div>
@@ -773,11 +785,11 @@ function renderApp(){
 function renderNav(){
   let tabs;
   if(isResponsabile()){
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
   } else if(isManager()){
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['richieste','Richieste turno'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
   } else {
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['disponibilita','La mia disponibilità']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['disponibilita','La mia disponibilità'],['richieste','Le mie richieste']];
   }
   document.getElementById('main-nav').innerHTML=tabs.map(([id,label],i)=>`
     <button class="nav-btn ${i===0?'active':''}" onclick="goTab('${id}')">${label}</button>`).join('');
@@ -841,6 +853,7 @@ function doLoginDep(){
   currentDipendente=p;
   applyReparto(repOf(p));
   renderApp();
+  setTimeout(updateRichiesteBadge,500);
 }
 function logout(){stopPresence();role='';currentManager=null;currentDipendente=null;renderLogin();}
 async function changePwd(){const p=document.getElementById('new-pwd').value.trim();if(!p){alert('Inserisci una password.');return;}G.managerPwd=p;await dbSaveConfig('managerPwd',p);alert('Password aggiornata!');}
@@ -861,6 +874,7 @@ function goTab(t){
   if(t==='legenda')renderLegenda();
   if(t==='config')renderConfig();
   if(t==='settimane')renderWeekList();
+  if(t==='richieste')renderRichieste();
   if(t==='disponibilita')renderDisponibilita();
   if(t==='staff-archiviato')renderStaffArchiviato();
   if(t==='archivio')renderArchive();
@@ -1278,8 +1292,12 @@ function renderTurni(){
         const fIds=c.servizio==='pranzo'?ALL_FASCE.filter(f=>f.tipo==='pranzo').map(f=>f.id):c.servizio==='cena'?ALL_FASCE.filter(f=>f.tipo==='cena').map(f=>f.id):ALL_FASCE.map(f=>f.id);
         const disp=dStr&&extra?G.disponibilita[p.id+'_'+dStr]:null;
         const isAvail=!val&&disp&&(!disp.fasce||!disp.fasce.length||fIds.some(fid=>disp.fasce.includes(fid)));
+        // Check for pending richiesta turno
+        const richPending=dStr&&!extra?G.richieste.find(r=>r.staff_id===p.id&&r.data===dStr&&r.stato==='in_attesa'):null;
         const cellBg=isAvail?'background:#dcfce7;':(!val&&hasOffReq?'background:#fff8dd;':'');
-        h+=`<td class="shift-cell" style="${cs}${cellBg}" title="${isAvail?'Disponibile':hasOffReq?'Richiesta giorno libero':''}">
+        const cellBorder=richPending?'outline:2px solid #f5d76e;outline-offset:-2px;':'';
+        const cellTitle=isAvail?'Disponibile':richPending?'Richiesta: '+richPending.turno_richiesto:hasOffReq?'Richiesta giorno libero':'';
+        h+=`<td class="shift-cell" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}">
           <select onchange="setShift(${sKey},this.value)" style="width:66px;font-size:11px;padding:2px 3px;border:none;background:transparent;color:${val?shiftTextColor(val):'var(--text)'};font-family:inherit;font-weight:${val?'600':'400'};">
             <option value="" style="background:#fff;color:#1a1a1a;"></option>
             ${G.shifts.map(sh=>`<option value="${sh.code}" style="background:#fff;color:#1a1a1a;"${sh.code===val?' selected':''}>${sh.code}</option>`).join('')}
@@ -2539,6 +2557,247 @@ async function deleteManager(mid,name){
 
 
 
+
+// ===== RICHIESTE TURNO =====
+
+function getRichiestePersona(staffId){
+  return G.richieste.filter(r=>r.staff_id===staffId);
+}
+
+function getRichiestaMessoSolare(staffId){
+  // Returns how many requests this person made in the current calendar month
+  const now=new Date();
+  const y=now.getFullYear();const m=now.getMonth()+1;
+  return G.richieste.filter(r=>{
+    if(r.staff_id!==staffId)return false;
+    const d=new Date(r.created_at);
+    return d.getFullYear()===y&&(d.getMonth()+1)===m;
+  }).length;
+}
+
+function updateRichiesteBadge(){
+  const badge=document.getElementById('richieste-badge');if(!badge)return;
+  if(!currentDipendente){badge.style.display='none';return;}
+  const pending=G.richieste.filter(r=>r.staff_id===currentDipendente.id&&r.stato!=='in_attesa');
+  // Show badge for new responses not yet seen
+  const newResp=pending.filter(r=>!r._seen);
+  if(newResp.length>0){
+    badge.style.display='inline-block';
+    badge.innerHTML=`<span onclick="goTab('richieste')" style="background:var(--blue-bg);color:var(--blue-text);border:0.5px solid var(--blue-border);padding:2px 10px;border-radius:20px;font-size:10px;cursor:pointer;font-weight:500;">
+      &#128276; ${newResp.length} risposta${newResp.length>1?'e':''} alle tue richieste</span>`;
+  } else {
+    badge.style.display='none';
+  }
+}
+
+function renderRichieste(){
+  const el=document.getElementById('richieste-content');if(!el)return;
+  if(isManager()){
+    renderRichiesteManager(el);
+  } else if(currentDipendente&&!isExtra(currentDipendente)){
+    renderRichiesteStaff(el);
+  } else {
+    el.innerHTML='<p style="color:var(--text3);font-size:12px;">Questa funzione è disponibile solo per lo staff fisso.</p>';
+  }
+}
+
+function renderRichiesteManager(el){
+  const pending=G.richieste.filter(r=>r.stato==='in_attesa');
+  const done=G.richieste.filter(r=>r.stato!=='in_attesa');
+
+  let html=`<p style="font-size:14px;font-weight:500;margin-bottom:1rem;">Richieste turno</p>`;
+
+  if(!G.richieste.length){
+    html+='<p style="color:var(--text3);font-size:12px;">Nessuna richiesta.</p>';
+    el.innerHTML=html;return;
+  }
+
+  // Pending requests
+  if(pending.length){
+    html+=`<p style="font-size:12px;font-weight:600;color:var(--orange-text);margin-bottom:8px;">&#9888; In attesa di risposta (${pending.length})</p>`;
+    html+=pending.map(r=>{
+      const staff=G.allStaff.find(s=>s.id===r.staff_id);
+      const dateObj=new Date(r.data+'T12:00:00');
+      const dateLabel=dateObj.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
+      return `<div style="background:#fff;border:0.5px solid var(--orange-border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div style="flex:1;">
+            <span style="font-weight:500;">${staff?staff.name:'?'}</span>
+            <span style="font-size:11px;color:var(--text2);margin-left:8px;">${dateLabel}</span>
+            <span style="font-size:11px;font-weight:600;margin-left:8px;padding:2px 8px;border-radius:4px;${r.turno_richiesto==='OFF'?'background:#111;color:#fff;':'background:var(--bg3);'}">${r.turno_richiesto}</span>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn success" style="font-size:11px;padding:4px 10px;" onclick="rispondiRichiesta('${r.id}','approvata')">✓ Approva</button>
+            <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="rispondiRichiesta('${r.id}','rifiutata')">✗ Rifiuta</button>
+          </div>
+        </div>
+        ${r.nota?`<p style="font-size:11px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3);border-radius:4px;">&#128172; ${r.nota}</p>`:''}
+      </div>`;
+    }).join('');
+  }
+
+  // Done requests
+  if(done.length){
+    html+=`<p style="font-size:12px;font-weight:600;color:var(--text2);margin:1rem 0 8px;">Storico richieste</p>`;
+    html+=done.slice(0,20).map(r=>{
+      const staff=G.allStaff.find(s=>s.id===r.staff_id);
+      const dateObj=new Date(r.data+'T12:00:00');
+      const dateLabel=dateObj.toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'});
+      const statoColor=r.stato==='approvata'?'color:var(--green-text);':'color:var(--red-text);';
+      return `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <span style="font-weight:500;flex:1;">${staff?staff.name:'?'}</span>
+        <span style="font-size:11px;color:var(--text2);">${dateLabel}</span>
+        <span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:var(--bg3);">${r.turno_richiesto}</span>
+        <span style="font-size:11px;font-weight:600;${statoColor}">${r.stato==='approvata'?'✓ Approvata':'✗ Rifiutata'}</span>
+      </div>`;
+    }).join('');
+  }
+  el.innerHTML=html;
+}
+
+async function rispondiRichiesta(id,stato){
+  const r=G.richieste.find(r=>r.id===id);if(!r)return;
+  const nota=stato==='rifiutata'?prompt('Motivo del rifiuto (opzionale):'):'';
+  try{
+    await sb.from('richieste_turno').update({stato,risposta_nota:nota||null,updated_at:new Date().toISOString()}).eq('id',id);
+    r.stato=stato;r.risposta_nota=nota||null;
+
+    // If approved, write the shift into the week
+    if(stato==='approvata'){
+      const dataRich=new Date(r.data+'T12:00:00');
+      // Find the week that contains this date
+      const wk=G.weeks.find(w=>{
+        if(!w.startDate)return false;
+        const start=new Date(w.startDate+'T12:00:00');
+        const end=new Date(start);end.setDate(end.getDate()+6);
+        return dataRich>=start&&dataRich<=end;
+      });
+      if(wk){
+        const di=Math.round((dataRich-new Date(wk.startDate+'T12:00:00'))/(1000*60*60*24));
+        if(!wk.shift_assign[di])wk.shift_assign[di]={};
+        wk.shift_assign[di][r.staff_id]=r.turno_richiesto;
+        await dbSaveWeek(wk);
+        alert('Richiesta approvata! Turno '+r.turno_richiesto+' inserito nella settimana.');
+      } else {
+        alert('Richiesta approvata! Nessuna settimana trovata per quella data — inserisci il turno manualmente.');
+      }
+    } else {
+      alert('Richiesta rifiutata.');
+    }
+    renderRichiesteManager(document.getElementById('richieste-content'));
+  }catch(e){alert('Errore: '+e.message);}
+}
+
+function renderRichiesteStaff(el){
+  const staffId=currentDipendente.id;
+  const mioRichieste=getRichiestePersona(staffId);
+  const usateQuestoMese=getRichiestaMessoSolare(staffId);
+  const possoChiedere=usateQuestoMese===0;
+  const now=new Date();
+  const meseCorrente=MONTHS_IT[now.getMonth()]+' '+now.getFullYear();
+
+  // Mark responses as seen
+  mioRichieste.filter(r=>r.stato!=='in_attesa'&&!r._seen).forEach(r=>r._seen=true);
+  updateRichiesteBadge();
+
+  let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.5rem;">Le mie richieste turno</p>`;
+  html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Puoi fare <b>1 richiesta al mese</b>. Questo mese (${meseCorrente}): <b>${usateQuestoMese}/1</b> richieste usate.</p>`;
+
+  if(possoChiedere){
+    html+=`<div style="background:var(--green-bg);border:0.5px solid var(--green-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:1rem;">
+      <p style="font-size:12px;color:var(--green-text);font-weight:500;margin-bottom:8px;">&#10003; Puoi fare una richiesta questo mese</p>
+      <button class="btn primary" onclick="apriFormRichiesta()">+ Nuova richiesta</button>
+    </div>`;
+  } else {
+    html+=`<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin-bottom:1rem;">
+      <p style="font-size:12px;color:var(--text2);">Hai già usato la tua richiesta mensile. Potrai fare una nuova richiesta il mese prossimo.</p>
+    </div>`;
+  }
+
+  if(mioRichieste.length){
+    html+=`<p style="font-size:12px;font-weight:500;margin-bottom:8px;">Storico richieste</p>`;
+    html+=mioRichieste.map(r=>{
+      const dateObj=new Date(r.data+'T12:00:00');
+      const dateLabel=dateObj.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+      const statoStyle=r.stato==='in_attesa'?'background:var(--yellow-bg);color:var(--yellow-text);border-color:var(--yellow-border);'
+        :r.stato==='approvata'?'background:var(--green-bg);color:var(--green-text);border-color:var(--green-border);'
+        :'background:var(--red-bg);color:var(--red-text);border-color:var(--red-border);';
+      const statoLabel=r.stato==='in_attesa'?'⏳ In attesa':r.stato==='approvata'?'✓ Approvata':'✗ Rifiutata';
+      return `<div style="background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="flex:1;">
+            <div style="font-weight:500;font-size:13px;">${dateLabel}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px;">Turno richiesto: <b>${r.turno_richiesto}</b></div>
+            ${r.nota?`<div style="font-size:11px;color:var(--text3);margin-top:2px;">${r.nota}</div>`:''}
+          </div>
+          <span style="font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;border:0.5px solid;${statoStyle}">${statoLabel}</span>
+        </div>
+        ${r.risposta_nota?`<p style="font-size:11px;color:var(--text2);margin-top:8px;padding:6px 8px;background:var(--bg3);border-radius:4px;">Risposta: ${r.risposta_nota}</p>`:''}
+      </div>`;
+    }).join('');
+  } else {
+    html+='<p style="color:var(--text3);font-size:12px;">Nessuna richiesta ancora.</p>';
+  }
+  el.innerHTML=html;
+}
+
+function apriFormRichiesta(){
+  const staffId=currentDipendente.id;
+  const popup=document.createElement('div');
+  popup.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:600;display:flex;align-items:center;justify-content:center;';
+  popup.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.5rem;width:380px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:1rem;">Nuova richiesta turno</h3>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Data</label>
+        <input type="date" id="rich-data" min="${dateToStr(new Date())}"
+          style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Turno richiesto</label>
+        <select id="rich-turno" style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;background:#fff;">
+          <option value="">— Seleziona —</option>
+          <option value="OFF">OFF (riposo)</option>
+          ${G.shifts.filter(s=>!s.is_ferie).map(s=>`<option value="${s.code}">${s.code}${s.s1&&s.e1?' ('+s.s1+'–'+s.e1+')':s.s2&&s.e2?' ('+s.s2+'–'+s.e2+')':''}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Nota (opzionale)</label>
+        <textarea id="rich-nota" placeholder="Es: ho un impegno familiare" rows="2"
+          style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:12px;resize:none;"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:1rem;">
+      <button class="btn primary" onclick="inviaRichiesta('${staffId}')">Invia richiesta</button>
+      <button class="btn" onclick="this.closest('div').parentElement.remove()">Annulla</button>
+    </div>
+  </div>`;
+  document.body.appendChild(popup);
+  popup.addEventListener('click',e=>{if(e.target===popup)popup.remove();});
+}
+
+async function inviaRichiesta(staffId){
+  const data=document.getElementById('rich-data').value;
+  const turno=document.getElementById('rich-turno').value;
+  const nota=document.getElementById('rich-nota').value.trim();
+  if(!data){alert('Seleziona una data.');return;}
+  if(!turno){alert('Seleziona un turno.');return;}
+  const row={
+    id:'r'+Date.now()+Math.random().toString(36).slice(2,5),
+    staff_id:staffId,data,turno_richiesto:turno,
+    nota:nota||null,stato:'in_attesa',
+    created_at:new Date().toISOString(),updated_at:new Date().toISOString()
+  };
+  try{
+    const {error}=await sb.from('richieste_turno').insert(row);
+    if(error){alert('Errore: '+error.message);return;}
+    G.richieste.unshift(row);
+    document.querySelector('[onclick*="closest(\'div\').parentElement.remove"]')?.click();
+    document.querySelector('div[style*="rgba"]')?.remove();
+    renderRichiesteStaff(document.getElementById('richieste-content'));
+    alert('Richiesta inviata! Il manager risponderà al più presto.');
+  }catch(e){alert('Errore: '+e.message);}
+}
 
 // ===== DISPONIBILITA EXTRA =====
 
