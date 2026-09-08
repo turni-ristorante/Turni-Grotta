@@ -770,10 +770,9 @@ function renderApp(){
 function renderNav(){
   let tabs;
   if(isResponsabile()){
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['staff-archiviato','Staff archiviato'],['archivio','Archivio'],['managers','Manager']];
   } else if(isManager()){
-    // Il manager di reparto non gestisce ne' i manager ne' i giorni di apertura
-    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
+    tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['staff','Staff'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],['regole','Regole'],['legenda','Legenda turni'],['config','Apertura'],['settimane','Settimane'],['disponibilita','Disponibilità extra'],['staff-archiviato','Staff archiviato'],['archivio','Archivio']];
   } else {
     tabs=[['turni','Turni'],['giornaliero','Giornaliero'],['disponibilita','La mia disponibilità']];
   }
