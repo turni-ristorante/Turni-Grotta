@@ -179,6 +179,14 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 <div id="loading-screen"><div class="spinner"></div><p style="font-size:14px;color:#555;">Connessione al database...</p></div>
 <div class="app" id="app" style="display:none;"></div>
 <script>
+// ============================================================
+// INTERRUTTORE: modulo ferie visibile agli operatori
+// false = gli operatori non vedono la voce "Le mie ferie"
+// true  = la vedono e possono inviare richieste
+// I manager vedono la scheda Ferie in ogni caso.
+// ============================================================
+const FERIE_OPERATORI = false;
+
 const SUPABASE_URL='https://nesezvoaammltxdkfvda.supabase.co';
 const SUPABASE_KEY='sb_publishable_9qJpOrCPymeRQuwrxtgFCA_aTwUsiKy';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
@@ -878,7 +886,11 @@ function renderNav(){
     const isExtraDip=currentDipendente&&isExtra(currentDipendente);
     const tabs=[['turni','Turni'],['giornaliero','Giornaliero']];
     if(isExtraDip)tabs.push(['disponibilita','La mia disponibilità']);
-    else{tabs.push(['richieste','Le mie richieste']);tabs.push(['ferie','Le mie ferie']);}
+    else{
+      tabs.push(['richieste','Le mie richieste']);
+      // La voce Ferie per gli operatori si accende da FERIE_OPERATORI, in cima al file
+      if(FERIE_OPERATORI)tabs.push(['ferie','Le mie ferie']);
+    }
     nav.innerHTML=tabs.map(([id,label])=>
       `<button class="nav-btn ${id===currentTab?'active':''}" onclick="goTab('${id}')">${label}</button>`).join('');
     return;
@@ -2833,6 +2845,8 @@ function renderFerie(){
   const el=document.getElementById('ferie-content');if(!el)return;
   if(isManager()){
     renderFerieManager(el);
+  } else if(!FERIE_OPERATORI){
+    el.innerHTML='<p style="color:var(--text3);font-size:12px;">Le richieste ferie non sono ancora attive. Verranno abilitate a breve.</p>';
   } else if(currentDipendente&&!isExtra(currentDipendente)){
     renderFerieStaff(el);
   } else {
