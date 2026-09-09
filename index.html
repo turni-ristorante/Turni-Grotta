@@ -652,7 +652,7 @@ function renderApp(){
   if(!role){renderLogin();return;}
   document.getElementById('app').innerHTML=`
     <div class="topbar">
-      <span class="role-badge ${role}">${isManager()?(currentManager?currentManager.name:'Manager'):'Dipendente'}</span>
+      <span class="role-badge ${role}">${isManager()?(currentManager?currentManager.name:'Manager'):'Operatore'}</span>
       ${isResponsabile()
         ?`<select class="week-selector" id="rep-selector" title="Reparto" onchange="switchReparto(this.value)" style="max-width:170px;">${Object.keys(REPARTI).map(k=>`<option value="${k}"${k===REP?' selected':''}>${REPARTI[k].label}</option>`).join('')}</select>`
         :`<span class="role-badge" style="background:var(--bg3);color:var(--text2);">${repLabel()}</span>`}
@@ -776,7 +776,7 @@ function renderApp(){
     <!-- ARCHIVIO VERSIONI -->
     <!-- STAFF ARCHIVIATO -->
     <div id="sec-staff-archiviato" class="sec">
-      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Dipendenti rimossi. Riattivali per renderli nuovamente visibili nei turni e nella lista staff.</p>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Operatori rimossi. Riattivali per renderli nuovamente visibili nei turni e nella lista staff.</p>
       <div id="staff-archiviato-list"></div>
     </div>
 
@@ -812,7 +812,7 @@ function renderApp(){
 
     <!-- SETTIMANE -->
     <div id="sec-settimane" class="sec">
-      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Gestisci le settimane. Pubblica per renderle visibili ai dipendenti.</p>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Gestisci le settimane. Pubblica per renderle visibili agli operatori.</p>
       <div style="display:flex;gap:8px;margin-bottom:1.25rem;flex-wrap:wrap;align-items:flex-end;">
         <div style="display:flex;flex-direction:column;gap:4px;">
           <label style="font-size:11px;color:var(--text2);">Lunedì di inizio settimana</label>
@@ -940,10 +940,10 @@ function renderLogin(){
         <p class="err" id="pwd-err" style="display:none;">Password errata.</p>
         <button class="btn primary" onclick="doLogin()">Accedi come manager</button>
         <div class="login-or">oppure</div>
-        <h3>Accesso dipendente</h3>
+        <h3>Accesso operatore</h3>
         <input type="text" id="dep-code-input" placeholder="Inserisci il tuo codice" onkeydown="if(event.key==='Enter')doLoginDep()">
         <p class="err" id="dep-err" style="display:none;">Codice non valido o accesso revocato.</p>
-        <button class="btn" onclick="doLoginDep()">Accedi come dipendente</button>
+        <button class="btn" onclick="doLoginDep()">Accedi come operatore</button>
       </div>
     </div>`;
   // Populate manager select now that DOM exists
@@ -1468,7 +1468,7 @@ function renderTurni(){
   });
   let h='<table><thead>';
   // Row 1: day names (spanning 2 for P+C)
-  h+='<tr><th class="scol">Dipendente</th>';
+  h+='<tr><th class="scol">Operatore</th>';
   let lastDi=-1;
   cols.forEach(c=>{
     if(c.idx===lastDi)return;lastDi=c.idx;
@@ -1673,7 +1673,7 @@ async function addStaff(){
   await dbSaveStaff();renderStaff();
 }
 async function removeStaff(id){
-  if(!confirm('Rimuovere questo dipendente dalla lista attiva?\nResterà visibile nell\'archivio storico dei turni.'))return;
+  if(!confirm('Rimuovere questo operatore dalla lista attiva?\nResterà visibile nell\'archivio storico dei turni.'))return;
   try{
     const disabledAt=new Date().toISOString();
     await sb.from('staff').update({attivo:false, disabled_at:disabledAt}).eq('id',id);
@@ -1689,7 +1689,7 @@ async function removeStaff(id){
 
 function renderStaff(){
   const el=document.getElementById('staff-list');if(!el)return;
-  if(!G.staff.length){el.innerHTML='<p style="color:var(--text2);font-size:12px;">Nessun dipendente.</p>';return;}
+  if(!G.staff.length){el.innerHTML='<p style="color:var(--text2);font-size:12px;">Nessun operatore.</p>';return;}
   let html='';
   G.staff.forEach((p,i)=>{
     const extra=isExtra(p);
@@ -1731,7 +1731,7 @@ function renderStaffDetail(){
           <input type="text" value="${p.role||''}" id="edit-role-${p.id}" style="padding:6px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;width:200px;">
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;">
-          <label style="font-size:11px;color:var(--text2);">Codice accesso dipendente</label>
+          <label style="font-size:11px;color:var(--text2);">Codice accesso operatore</label>
           <input type="text" value="${p.accessCode||''}" id="edit-code-${p.id}" placeholder="es. 1234 o vuoto = bloccato" style="padding:6px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;width:180px;">
         </div>
         <button class="btn primary" onclick="saveStaffInfo('${p.id}')">Salva nome/ruolo</button>
@@ -4151,7 +4151,7 @@ function exportPDF(){
   });
   let html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Turni '+wk.name+'</title><style>body{font-family:Arial,sans-serif;font-size:10px;margin:16px;}h1{font-size:14px;margin-bottom:8px;}h2{font-size:11px;margin:14px 0 4px;page-break-before:avoid;}table{border-collapse:collapse;width:100%;margin-bottom:12px;}th,td{border:0.5px solid #ccc;padding:2px 4px;text-align:center;}th{background:#f0f0f0;font-weight:600;}.name{text-align:left;font-weight:500;}.off{background:#111;color:#fff;}.b{background:#1a56db;color:#fff;}.d{background:#e65100;color:#fff;}.m{background:#6b7280;color:#fff;}.a{background:#c026d3;color:#fff;}.e{background:#dc2626;color:#fff;}@media print{body{margin:8px;}}</style></head><body>';
   html+='<h1>Turni settimana: '+wk.name+'</h1>';
-  html+='<table><thead><tr><th class="name">Dipendente</th>';
+  html+='<table><thead><tr><th class="name">Operatore</th>';
   let lastDi=-1;
   cols.forEach(c=>{if(c.idx===lastDi)return;lastDi=c.idx;const sp=c.tipo==='pranzo_cena'?2:1;html+='<th colspan="'+sp+'">'+c.label+'</th>';});
   html+='</tr></thead><tbody>';
@@ -4207,7 +4207,7 @@ async function renderStaffArchiviato(){
   try{
     const {data}=await sb.from('staff').select('id,name,role,reparto,attivo,created_at,disabled_at').eq('attivo',false).order('name');
     if(!data||!data.length){
-      el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessun dipendente archiviato.</p>';
+      el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessun operatore archiviato.</p>';
       return;
     }
     const fmtDate=d=>d?new Date(d).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
