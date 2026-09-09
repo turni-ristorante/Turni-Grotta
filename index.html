@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Turni Ristorante</title>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Turni Ristorante</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -161,6 +163,51 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .nav-item.active{background:var(--blue-bg);color:var(--blue-text);font-weight:500;}
 .nav-sep{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px 4px;border-top:0.5px solid var(--border);margin-top:4px;}
 .nav-dot{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:20px;background:#dc2626;color:#fff;font-size:9px;font-weight:700;}
+
+/* ===== SCHERMI PICCOLI ===== */
+@media (max-width:860px){
+  .app{padding:.6rem;}
+  /* la legenda va sotto la griglia, non di fianco */
+  .main-with-sidebar{flex-direction:column;}
+  .main-content{width:100%;overflow:visible;}
+  .leg-sidebar{width:100%;order:2;}
+  #leg-sidebar-turni,#leg-sidebar-giorno{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px;}
+  #leg-sidebar-turni>div:first-child,#leg-sidebar-giorno>div:first-child{grid-column:1/-1;}
+  .leg-sidebar-item{border-bottom:none;padding-bottom:0;margin-bottom:0;}
+
+  /* la tabella scorre dentro il suo riquadro: cosi' nomi e intestazioni restano fermi */
+  .wrap{max-height:70vh;overflow:auto;-webkit-overflow-scrolling:touch;}
+  .wrap thead th{position:sticky;top:0;z-index:3;}
+  .wrap thead tr:first-child th{height:28px;}
+  .wrap thead tr:nth-child(2) th{top:28px;}
+  .wrap th.scol{left:0;z-index:6;}
+  .wrap td.scol{z-index:2;}
+  .scol{min-width:86px;padding:4px 6px;}
+  td.shift-cell select{width:58px;}
+  td.shift-cell-ro,td.rc-ro{font-size:11px;padding:4px 5px;}
+
+  /* barra e menu piu' compatti */
+  .topbar{gap:6px;padding:7px 9px;}
+  .week-selector{max-width:145px;font-size:12px;}
+  .nav-dropdown{min-width:170px;}
+  .nav-group-btn{padding:6px 10px;}
+
+  /* pannello di confronto a tutta larghezza */
+  .compare-panel{width:100%;right:-100%;}
+  .compare-panel.open{right:0;}
+
+  /* calendari: celle piu' strette ma leggibili */
+  .fab-grid-wrap{grid-template-columns:1fr;}
+  .config-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));}
+  .pref-roles-grid{grid-template-columns:1fr;}
+}
+@media (max-width:430px){
+  .scol{min-width:74px;font-size:11px;}
+  .wrap thead th{font-size:10px;padding:4px 5px;}
+  td.shift-cell select{width:52px;font-size:10px;}
+  .role-badge{font-size:10px;padding:2px 8px;}
+  .leg-sidebar{padding:8px;}
+}
 </style>
 </head><body>
 <!-- Compare panel overlay -->
