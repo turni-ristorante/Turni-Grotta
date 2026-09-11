@@ -874,6 +874,7 @@ function renderApp(){
         <button class="btn warn" onclick="createWeek(true)">+ Duplica attiva</button>
       </div>
       <div id="week-calendar"></div>
+      <div id="week-active" style="margin-top:1.25rem;"></div>
       <div id="week-list-title" style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin:1.25rem 0 8px;"></div>
       <div class="week-list" id="week-list"></div>
       <div style="margin-top:1.5rem;padding-top:1rem;border-top:0.5px solid var(--border);">
@@ -1153,6 +1154,7 @@ async function switchWeek(id){
   const alertEl=document.getElementById('draft-alerts');
   if(alertEl)alertEl.innerHTML='';
   renderTurni();renderDayNav();renderWeekSelector();
+  if(document.getElementById("sec-settimane")?.classList.contains("active"))renderWeekList();
 }
 
 // ===== DATE HELPERS =====
@@ -1336,15 +1338,42 @@ function weekDrop(e,id){
 }
 function renderWeekList(){
   renderWeekCalendar();
-  const sorted=getWeeksSorted().filter(w=>isPublished(w));
+  renderSettimanaAttiva();
+  const sorted=getWeeksSorted().filter(w=>isPublished(w)&&w.id!==G.currentWeekId);
   const titolo=document.getElementById('week-list-title');
-  if(titolo)titolo.textContent='Settimane pubblicate — '+repLabel();
+  if(titolo)titolo.textContent='Altre settimane pubblicate — '+repLabel();
   const el=document.getElementById('week-list');if(!el)return;
   if(!sorted.length){
-    el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessuna settimana pubblicata per '+repLabel()+'. Usa il calendario qui sopra per aprire una bozza e pubblicarla.</p>';
+    el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessun\'altra settimana pubblicata per '+repLabel()+'.</p>';
     return;
   }
   el.innerHTML=sorted.map(w=>weekItemHtml(w)).join('');
+}
+
+// La settimana aperta ha sempre il suo riquadro, anche se e' ancora una bozza:
+// senza questo, le bozze non avrebbero il tasto Pubblica.
+function renderSettimanaAttiva(){
+  const el=document.getElementById('week-active');if(!el)return;
+  const w=curWeek();
+  if(!w){el.innerHTML='';return;}
+  const pubbl=isPublished(w);
+  el.innerHTML=`<div style="background:#fff;border:1.5px solid ${pubbl?'var(--green-border)':'var(--blue-border)'};border-radius:var(--radius);padding:14px 16px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--blue-text);background:var(--blue-bg);padding:2px 9px;border-radius:20px;">Settimana aperta</span>
+      <span class="pub-badge ${pubbl?'yes':'no'}">${repLabel()}: ${pubbl?'Pubblicata':'Bozza'}</span>
+      ${isResponsabile()?`<span style="font-size:10px;color:var(--text3);">${pubSummary(w)}</span>`:''}
+    </div>
+    <input value="${w.name}" onchange="renameWeek('${w.id}',this.value)"
+      style="width:100%;border:none;background:transparent;font-size:15px;font-weight:500;color:var(--text);padding:0 0 10px;font-family:inherit;">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <button class="btn ${pubbl?'danger':'success'}" style="font-weight:600;" onclick="togglePublish('${w.id}')">
+        ${pubbl?'Nascondi':'Pubblica'} per ${repLabel()}</button>
+      <button class="btn warn" onclick="dupWeekFrom('${w.id}')">Duplica</button>
+      <button class="btn primary" onclick="copyTurniSu('${w.id}')">Copia turni su...</button>
+      <button class="btn danger" onclick="deleteWeek('${w.id}')">Elimina</button>
+    </div>
+    ${!pubbl?`<p style="font-size:11px;color:var(--text2);margin-top:10px;">È ancora una bozza: la vedi solo tu. Clicca <b>Pubblica</b> per renderla visibile agli operatori di ${repLabel()}.</p>`:''}
+  </div>`;
 }
 
 function weekItemHtml(w){
