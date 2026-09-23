@@ -232,7 +232,7 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 // true  = la vedono e possono inviare richieste
 // I manager vedono la scheda Ferie in ogni caso.
 // ============================================================
-const FERIE_OPERATORI = true;
+const FERIE_OPERATORI = false;
 
 const SUPABASE_URL='https://nesezvoaammltxdkfvda.supabase.co';
 const SUPABASE_KEY='sb_publishable_9qJpOrCPymeRQuwrxtgFCA_aTwUsiKy';
@@ -446,6 +446,7 @@ function applyReparto(r){
   G.regole=asJson('regole',[]);
   G.roleRules=asJson('roleRules',[]);
   G.posRules=asJson('posRules',[]);
+  G.feriePreavviso=parseInt(raw('feriePreavviso')||'0')||0;
   migrateFabbisogno();
   selectedStaffId=null;
 }
@@ -2863,7 +2864,15 @@ function dataInFinestra(dateStr,tipo){
 }
 
 function puoChiedereFerie(dateStr){
-  // Blocked period → cannot request
+  // Preavviso minimo: la richiesta deve arrivare con almeno N giorni di anticipo
+  const gg=G.feriePreavviso||0;
+  if(gg>0){
+    const oggi=new Date();oggi.setHours(12,0,0,0);
+    const limite=new Date(oggi);limite.setDate(limite.getDate()+gg);
+    if(new Date(dateStr+'T12:00:00')<limite)
+      return{ok:false,motivo:'Serve almeno '+gg+(gg===1?' giorno':' giorni')+' di preavviso'};
+  }
+  // Periodo bloccato
   if(dataInFinestra(dateStr,'bloccata'))return{ok:false,motivo:'Periodo bloccato'};
   // If there are "aperta" windows defined, the date must fall in one
   const finestreAperte=G.ferieFinestre.filter(f=>f.reparto===REP&&f.tipo==='aperta');
@@ -2892,6 +2901,34 @@ function statoGiornoFerie(r,dateStr){
   if((r.giorni_approvati||[]).includes(dateStr))return'approvato';
   if((r.giorni_rifiutati||[]).includes(dateStr))return'rifiutato';
   return'attesa';
+}
+
+// Ferie scritte direttamente nella griglia turni, senza passare da una richiesta
+function ferieDaTurni(dateStr){
+  const out=[];
+  const wk=settimanaDelGiorno(dateStr);
+  if(!wk||!wk.startDate)return out;
+  const d=new Date(dateStr+'T12:00:00');
+  const di=Math.round((d-new Date(wk.startDate+'T12:00:00'))/(1000*60*60*24));
+  const giorno=(wk.shift_assign||{})[di]||{};
+  G.allStaff.filter(s=>repOf(s)===REP).forEach(s=>{
+    if([giorno[s.id],giorno[s.id+'_P'],giorno[s.id+'_C']].some(v=>v==='FERIE'))out.push(s);
+  });
+  return out;
+}
+
+// Chi risulta in ferie quel giorno, da qualunque strada: richiesta approvata
+// oppure FERIE messo a mano nei turni. Serve a non creare doppioni.
+function feriePersoneDelGiorno(dateStr){
+  const persone=[];
+  const visti=new Set();
+  ferieDelGiorno(dateStr).forEach(v=>{
+    if(v.stato==='approvato'){persone.push(v.staff.name);visti.add(v.staff.id);}
+  });
+  ferieDaTurni(dateStr).forEach(s=>{
+    if(!visti.has(s.id)){persone.push(s.name);visti.add(s.id);}
+  });
+  return persone;
 }
 
 // Tutte le voci ferie del reparto corrente per un dato giorno
@@ -2966,8 +3003,8 @@ function buildFerieRichiesteHtml(){
       const giorni=r.giorni||[];
       // Check overlaps
       const conflitti=giorni.map(g=>{
-        const{count,nomi}=conteggioFeriePerGiorno(g,REP);
-        return count>0?{data:g,nomi}:null;
+        const nomi=feriePersoneDelGiorno(g).filter(n=>n!==(staff?staff.name:''));
+        return nomi.length?{data:g,nomi}:null;
       }).filter(Boolean);
       return `<div style="background:#fff;border:0.5px solid var(--orange-border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;">
         <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;">
@@ -3047,14 +3084,19 @@ function buildFerieCalendarioHtml(){
   for(let day=1;day<=daysInMonth;day++){
     const dateStr=dateToStr(new Date(year,month,day));
     const voci=ferieDelGiorno(dateStr);
+    // Ferie messe a mano nei turni, senza una richiesta alle spalle
+    const idsRich=new Set(voci.map(v=>v.staff.id));
+    const manuali=ferieDaTurni(dateStr).filter(s=>!idsRich.has(s.id));
     const bloccata=dataInFinestra(dateStr,'bloccata');
-    const approvati=voci.filter(v=>v.stato==='approvato').length;
+    const approvati=voci.filter(v=>v.stato==='approvato').length+manuali.length;
     let bg='#fff';let border='var(--border)';
     if(bloccata){bg='#fef2f2';border='var(--red-border)';}
     else if(approvati>=2){bg='var(--orange-bg)';border='var(--orange-border)';}
     html+=`<div style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:5px;min-height:70px;">
       <div style="font-size:10px;font-weight:600;color:var(--text2);">${day}</div>
       ${bloccata?'<div style="font-size:8px;color:var(--red-text);margin-top:2px;">Bloccato</div>':''}
+      ${manuali.map(s=>`<div title="${s.name} — FERIE inserite a mano nei turni"
+          style="font-size:9px;border:1px dashed var(--border2);border-radius:3px;padding:1px 4px;margin-top:2px;background:var(--bg3);color:var(--text2);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.name}</div>`).join('')}
       ${voci.map(v=>{
         const st=v.stato==='approvato'?'background:var(--green-bg);border-color:var(--green-border);color:var(--green-text);'
           :v.stato==='rifiutato'?'background:var(--red-bg);border-color:var(--red-border);color:var(--red-text);'
@@ -3070,7 +3112,8 @@ function buildFerieCalendarioHtml(){
     <span><span style="display:inline-block;width:12px;height:12px;background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:3px;vertical-align:middle;"></span> Da decidere</span>
     <span><span style="display:inline-block;width:12px;height:12px;background:var(--green-bg);border:0.5px solid var(--green-border);border-radius:3px;vertical-align:middle;"></span> Approvata</span>
     <span><span style="display:inline-block;width:12px;height:12px;background:var(--red-bg);border:0.5px solid var(--red-border);border-radius:3px;vertical-align:middle;"></span> Rifiutata</span>
-    <span><span style="display:inline-block;width:12px;height:12px;background:var(--orange-bg);border:0.5px solid var(--orange-border);border-radius:3px;vertical-align:middle;"></span> 2+ approvate</span>
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--orange-bg);border:0.5px solid var(--orange-border);border-radius:3px;vertical-align:middle;"></span> 2+ in ferie</span>
+    <span><span style="display:inline-block;width:12px;height:12px;background:var(--bg3);border:1px dashed var(--border2);border-radius:3px;vertical-align:middle;"></span> Inserite a mano nei turni</span>
   </div>
   <p style="font-size:11px;color:var(--text3);margin-top:6px;">Clicca su un nome per approvare o rifiutare.</p>`;
   return html;
@@ -3211,6 +3254,16 @@ function buildFerieFinestreHtml(){
   let html=`<p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">Definisci i periodi in cui è possibile o vietato richiedere ferie per ${repLabel()}.</p>`;
 
   html+=`<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;">
+    <p style="font-size:12px;font-weight:500;margin-bottom:4px;">Preavviso minimo</p>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">Le ferie vanno chieste con almeno questi giorni di anticipo. Metti 0 per non chiedere preavviso.</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="number" min="0" max="90" id="ferie-preavviso" value="${G.feriePreavviso||0}"
+        style="width:70px;padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-size:12px;font-family:inherit;text-align:center;">
+      <span style="font-size:12px;color:var(--text2);">giorni prima</span>
+      <button class="btn primary" onclick="salvaPreavviso()">Salva preavviso</button>
+    </div>
+  </div>
+  <div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;">
     <p style="font-size:12px;font-weight:500;margin-bottom:8px;">Nuovo periodo</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
       <div><label style="font-size:10px;color:var(--text2);display:block;">Tipo</label>
@@ -3244,6 +3297,28 @@ function buildFerieFinestreHtml(){
   return html;
 }
 
+async function salvaPreavviso(){
+  const v=parseInt(document.getElementById('ferie-preavviso').value)||0;
+  G.feriePreavviso=Math.max(0,Math.min(90,v));
+  await dbSaveConfig(configKey('feriePreavviso'),String(G.feriePreavviso));
+  renderFerie();
+  alert(G.feriePreavviso>0
+    ? 'Preavviso impostato a '+G.feriePreavviso+(G.feriePreavviso===1?' giorno.':' giorni.')
+    : 'Preavviso disattivato: si può chiedere fino al giorno stesso.');
+}
+
+// Elenca chi ha gia' ferie in un intervallo, da richiesta o da turni
+function ferieNelPeriodo(dal,al){
+  const trovate=[];
+  const d=new Date(dal+'T12:00:00'), fine=new Date(al+'T12:00:00');
+  for(let x=new Date(d); x<=fine; x.setDate(x.getDate()+1)){
+    const ds=dateToStr(x);
+    const nomi=feriePersoneDelGiorno(ds);
+    if(nomi.length)trovate.push({data:ds,nomi});
+  }
+  return trovate;
+}
+
 async function aggiungiFinestra(){
   const tipo=document.getElementById('fin-tipo').value;
   const inizio=document.getElementById('fin-inizio').value;
@@ -3251,6 +3326,20 @@ async function aggiungiFinestra(){
   const nota=document.getElementById('fin-nota').value.trim();
   if(!inizio||!fine){alert('Inserisci data inizio e fine.');return;}
   if(fine<inizio){alert('La data di fine deve essere successiva a quella di inizio.');return;}
+  // Se sto bloccando un periodo, avviso se ci sono gia' ferie dentro
+  if(tipo==='bloccata'){
+    const gia=ferieNelPeriodo(inizio,fine);
+    if(gia.length){
+      const righe=gia.slice(0,12).map(g=>{
+        const dd=new Date(g.data+'T12:00:00');
+        return '  • '+dd.getDate()+'/'+(dd.getMonth()+1)+': '+g.nomi.join(', ');
+      }).join('\n');
+      const extra=gia.length>12?'\n  …e altri '+(gia.length-12)+' giorni.':'';
+      const ok=confirm('Attenzione: in questo periodo ci sono già ferie per '+repLabel()+'.\n\n'
+        +righe+extra+'\n\nIl blocco vale solo per le richieste future: le ferie già presenti restano.\n\nVuoi creare comunque il periodo bloccato?');
+      if(!ok)return;
+    }
+  }
   const row={id:'f'+Date.now()+Math.random().toString(36).slice(2,5),
     reparto:REP,tipo,data_inizio:inizio,data_fine:fine,nota:nota||null};
   try{
@@ -3421,6 +3510,10 @@ function renderFerieStaff(el){
     </div>`;
   }
 
+  if(G.feriePreavviso>0){
+    html+=`<div style="background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:var(--radius);padding:10px 14px;margin-bottom:0.75rem;">
+      <p style="font-size:11px;color:var(--yellow-text);">Le ferie vanno chieste con almeno <b>${G.feriePreavviso}${G.feriePreavviso===1?' giorno':' giorni'}</b> di anticipo: i giorni più vicini di così non si possono selezionare.</p></div>`;
+  }
   html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Clicca sui giorni per selezionarli, poi invia la richiesta.</p>`;
 
   // Month tabs
