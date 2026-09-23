@@ -2994,7 +2994,7 @@ function buildFerieRichiesteHtml(){
   const done=mieRichieste.filter(r=>r.stato!=='in_attesa');
 
   let html='';
-  if(!mieRichieste.length)return '<p style="color:var(--text3);font-size:12px;">Nessuna richiesta ferie.</p>';
+  if(!mieRichieste.length)return '<p style="color:var(--text3);font-size:12px;">Nessuna richiesta ferie per '+repLabel()+'.</p>';
 
   if(pending.length){
     html+=`<p style="font-size:12px;font-weight:600;color:var(--orange-text);margin-bottom:8px;">&#9888; In attesa (${pending.length})</p>`;
@@ -3716,10 +3716,15 @@ function renderRichieste(){
 }
 
 function renderRichiesteManager(el){
-  const pending=G.richieste.filter(r=>r.stato==='in_attesa');
-  const done=G.richieste.filter(r=>r.stato!=='in_attesa');
+  // Ogni manager vede solo le richieste del proprio reparto
+  const mie=G.richieste.filter(r=>{
+    const s=G.allStaff.find(s=>s.id===r.staff_id);
+    return s&&repOf(s)===REP;
+  });
+  const pending=mie.filter(r=>r.stato==='in_attesa');
+  const done=mie.filter(r=>r.stato!=='in_attesa');
 
-  let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.75rem;">Richieste turno</p>`;
+  let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.75rem;">Richieste turno — ${repLabel()}</p>`;
 
   // Reset counter panel
   const staffFisso=G.allStaff.filter(s=>!isExtra(s)&&repOf(s)===REP&&s.attivo!==false);
@@ -3741,8 +3746,8 @@ function renderRichiesteManager(el){
     <p style="font-size:10px;color:var(--text3);margin-top:6px;">Clicca ↺ accanto a un nome per azzerare il suo contatore mensile.</p>
   </div>`;
 
-  if(!G.richieste.length){
-    html+='<p style="color:var(--text3);font-size:12px;">Nessuna richiesta.</p>';
+  if(!mie.length){
+    html+='<p style="color:var(--text3);font-size:12px;">Nessuna richiesta per '+repLabel()+'.</p>';
     el.innerHTML=html;return;
   }
 
