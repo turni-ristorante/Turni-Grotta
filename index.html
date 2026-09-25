@@ -447,6 +447,7 @@ function applyReparto(r){
   G.roleRules=asJson('roleRules',[]);
   G.posRules=asJson('posRules',[]);
   G.feriePreavviso=parseInt(raw('feriePreavviso')||'0')||0;
+  G.turniPreavviso=parseInt(raw('turniPreavviso')||'0')||0;
   migrateFabbisogno();
   selectedStaffId=null;
 }
@@ -3673,6 +3674,13 @@ async function annullaFerie(id,silent){
 
 // ===== RICHIESTE TURNO =====
 
+// Prima data per cui si puo' ancora chiedere un turno, dato il preavviso
+function dataMinimaRichiesta(){
+  const d=new Date();d.setHours(12,0,0,0);
+  d.setDate(d.getDate()+(G.turniPreavviso||0));
+  return dateToStr(d);
+}
+
 function getRichiestePersona(staffId){
   return G.richieste.filter(r=>r.staff_id===staffId);
 }
@@ -3725,6 +3733,19 @@ function renderRichiesteManager(el){
   const done=mie.filter(r=>r.stato!=='in_attesa');
 
   let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.75rem;">Richieste turno — ${repLabel()}</p>`;
+
+  // Preavviso minimo per le richieste turno
+  html+=`<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;">
+    <p style="font-size:12px;font-weight:500;margin-bottom:4px;">Preavviso minimo</p>
+    <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">I turni vanno chiesti con almeno questi giorni di anticipo. Metti 0 per non chiedere preavviso.</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="number" min="0" max="60" id="turni-preavviso" value="${G.turniPreavviso||0}"
+        style="width:70px;padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-size:12px;font-family:inherit;text-align:center;">
+      <span style="font-size:12px;color:var(--text2);">giorni prima</span>
+      <button class="btn primary" onclick="salvaPreavvisoTurni()">Salva preavviso</button>
+      ${G.turniPreavviso>0?`<span style="font-size:11px;color:var(--text3);">Prima data richiedibile: <b>${new Date(dataMinimaRichiesta()+'T12:00:00').toLocaleDateString('it-IT')}</b></span>`:''}
+    </div>
+  </div>`;
 
   // Reset counter panel
   const staffFisso=G.allStaff.filter(s=>!isExtra(s)&&repOf(s)===REP&&s.attivo!==false);
@@ -3795,6 +3816,16 @@ function renderRichiesteManager(el){
     }).join('');
   }
   el.innerHTML=html;
+}
+
+async function salvaPreavvisoTurni(){
+  const v=parseInt(document.getElementById('turni-preavviso').value)||0;
+  G.turniPreavviso=Math.max(0,Math.min(60,v));
+  await dbSaveConfig(configKey('turniPreavviso'),String(G.turniPreavviso));
+  renderRichieste();
+  alert(G.turniPreavviso>0
+    ? 'Preavviso impostato a '+G.turniPreavviso+(G.turniPreavviso===1?' giorno.':' giorni.')
+    : 'Preavviso disattivato: si può chiedere anche per il giorno stesso.');
 }
 
 async function rispondiRichiesta(id,stato){
@@ -3883,7 +3914,7 @@ function modificaRichiesta(id){
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div>
         <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Data</label>
-        <input type="date" id="edit-rich-data" value="${r.data}" min="${dateToStr(new Date())}"
+        <input type="date" id="edit-rich-data" value="${r.data}" min="${dataMinimaRichiesta()}"
           style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;">
       </div>
       <div>
@@ -3915,6 +3946,12 @@ async function salvaModificaRichiesta(id){
   const nota=document.getElementById('edit-rich-nota').value.trim();
   if(!data){alert('Seleziona una data.');return;}
   if(!turno){alert('Seleziona un turno.');return;}
+  const minM=dataMinimaRichiesta();
+  if(data<minM){
+    const gg=G.turniPreavviso||0;
+    alert('Serve almeno '+gg+(gg===1?' giorno':' giorni')+' di preavviso.\nLa prima data richiedibile è il '+new Date(minM+'T12:00:00').toLocaleDateString('it-IT')+'.');
+    return;
+  }
   try{
     await sb.from('richieste_turno').update({
       data,turno_richiesto:turno,nota:nota||null,updated_at:new Date().toISOString()
@@ -3952,6 +3989,10 @@ function renderRichiesteStaff(el){
 
   let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.5rem;">Le mie richieste turno</p>`;
   html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Puoi fare <b>1 richiesta al mese</b>. Questo mese (${meseCorrente}): <b>${usateQuestoMese}/1</b> richieste usate.</p>`;
+  if(G.turniPreavviso>0){
+    html+=`<div style="background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:var(--radius);padding:10px 14px;margin-bottom:1rem;">
+      <p style="font-size:11px;color:var(--yellow-text);">I turni vanno chiesti con almeno <b>${G.turniPreavviso}${G.turniPreavviso===1?' giorno':' giorni'}</b> di anticipo. La prima data richiedibile è il <b>${new Date(dataMinimaRichiesta()+'T12:00:00').toLocaleDateString('it-IT')}</b>.</p></div>`;
+  }
 
   if(possoChiedere){
     html+=`<div style="background:var(--green-bg);border:0.5px solid var(--green-border);border-radius:var(--radius);padding:12px 16px;margin-bottom:1rem;">
@@ -4005,7 +4046,7 @@ function apriFormRichiesta(){
     <div style="display:flex;flex-direction:column;gap:10px;">
       <div>
         <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Data</label>
-        <input type="date" id="rich-data" min="${dateToStr(new Date())}"
+        <input type="date" id="rich-data" min="${dataMinimaRichiesta()}"
           style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;">
       </div>
       <div>
@@ -4037,6 +4078,12 @@ async function inviaRichiesta(staffId){
   const nota=document.getElementById('rich-nota').value.trim();
   if(!data){alert('Seleziona una data.');return;}
   if(!turno){alert('Seleziona un turno.');return;}
+  const min=dataMinimaRichiesta();
+  if(data<min){
+    const gg=G.turniPreavviso||0;
+    alert('Serve almeno '+gg+(gg===1?' giorno':' giorni')+' di preavviso.\nLa prima data richiedibile è il '+new Date(min+'T12:00:00').toLocaleDateString('it-IT')+'.');
+    return;
+  }
   const row={
     id:'r'+Date.now()+Math.random().toString(36).slice(2,5),
     staff_id:staffId,data,turno_richiesto:turno,
