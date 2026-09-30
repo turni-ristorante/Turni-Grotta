@@ -1492,10 +1492,21 @@ function doUndo(){
 }
 
 async function clearWeek(){
-  if(!confirm('Svuotare tutti i turni e i ruoli della settimana attiva? Questa azione non può essere annullata.'))return;
+  const bloccate=caselleBloccate();
+  const avviso=bloccate.length
+    ? '\n\nLe '+bloccate.length+' caselle bloccate (ferie e turni approvati) NON verranno cancellate.'
+    : '';
+  if(!confirm('Svuotare tutti i turni e i ruoli della settimana attiva? Questa azione non può essere annullata.'+avviso))return;
   const wk=curWeek();
   wk.shift_assign={};
   wk.role_assign={};
+  // rimetto le caselle bloccate dov'erano
+  bloccate.forEach(b=>{
+    if(!wk.shift_assign[b.di])wk.shift_assign[b.di]={};
+    if(b.valori.base!==undefined)wk.shift_assign[b.di][b.pid]=b.valori.base;
+    if(b.valori.pranzo!==undefined)wk.shift_assign[b.di][b.pid+'_P']=b.valori.pranzo;
+    if(b.valori.cena!==undefined)wk.shift_assign[b.di][b.pid+'_C']=b.valori.cena;
+  });
   await dbSaveWeek(wk);
   const alertEl=document.getElementById('draft-alerts');
   if(alertEl)alertEl.innerHTML='';
@@ -1591,14 +1602,16 @@ function renderTurni(){
         const isAvail=!val&&disp&&(!disp.fasce||!disp.fasce.length||fIds.some(fid=>disp.fasce.includes(fid)));
         // Check for pending richiesta turno
         const richPending=dStr&&!extra?G.richieste.find(r=>r.staff_id===p.id&&r.data===dStr&&r.stato==='in_attesa'):null;
+        const bloc=bloccoCasella(c.idx,p.id);
         const cellBg=isAvail?'background:#dcfce7;':(!val&&hasOffReq?'background:#fff8dd;':'');
-        const cellBorder=richPending?'outline:2px solid #f5d76e;outline-offset:-2px;':'';
-        const cellTitle=isAvail?'Disponibile':richPending?'Richiesta: '+richPending.turno_richiesto:hasOffReq?'Richiesta giorno libero':'';
+        const cellBorder=bloc?'outline:2px solid #7e22ce;outline-offset:-2px;'
+          :richPending?'outline:2px solid #f5d76e;outline-offset:-2px;':'';
+        const cellTitle=bloc?bloc.testo+' — bloccata':isAvail?'Disponibile':richPending?'Richiesta: '+richPending.turno_richiesto:hasOffReq?'Richiesta giorno libero':'';
         h+=`<td class="shift-cell" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}">
           <select onchange="setShift(${sKey},this.value)" style="width:66px;font-size:11px;padding:2px 3px;border:none;background:transparent;color:${val?shiftTextColor(val):'var(--text)'};font-family:inherit;font-weight:${val?'600':'400'};">
             <option value="" style="background:#fff;color:#1a1a1a;"></option>
             ${G.shifts.map(sh=>`<option value="${sh.code}" style="background:#fff;color:#1a1a1a;"${sh.code===val?' selected':''}>${sh.code}</option>`).join('')}
-          </select></td>`;
+          </select>${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
       } else {
         h+=`<td class="shift-cell-ro" style="${cs}">${val}</td>`;
       }
@@ -1637,7 +1650,63 @@ function renderTurni(){
   wrap.innerHTML=h;
 }
 let shiftTimer=null;
+
+// ===== CASELLE BLOCCATE =====
+// Elenco di tutte le caselle bloccate della settimana attiva, con il valore da conservare
+function caselleBloccate(){
+  const wk=curWeek(); const out=[];
+  if(!wk||!wk.startDate)return out;
+  for(let di=0;di<7;di++){
+    G.allStaff.filter(s=>repOf(s)===REP).forEach(s=>{
+      const b=bloccoCasella(di,s.id);
+      if(!b)return;
+      const g=(wk.shift_assign||{})[di]||{};
+      out.push({di,pid:s.id,blocco:b,valori:{
+        base:g[s.id], pranzo:g[s.id+'_P'], cena:g[s.id+'_C']
+      }});
+    });
+  }
+  return out;
+}
+
+// Una casella e' bloccata quando nasce da una richiesta approvata: ferie o turno.
+// Non serve memorizzare niente, il blocco si deduce dalle richieste stesse.
+function bloccoCasella(di,pid){
+  const wk=curWeek();
+  if(!wk||!wk.startDate)return null;
+  const d=new Date(wk.startDate+'T12:00:00');
+  d.setDate(d.getDate()+Number(di));
+  const ds=dateToStr(d);
+  // ferie approvate per quel giorno
+  const fr=(G.ferieRichieste||[]).find(r=>r.staff_id===pid&&(r.giorni_approvati||[]).includes(ds));
+  if(fr)return{tipo:'ferie',data:ds,testo:'Ferie approvate'};
+  // richiesta turno approvata per quel giorno
+  const rt=(G.richieste||[]).find(r=>r.staff_id===pid&&r.data===ds&&r.stato==='approvata');
+  if(rt)return{tipo:'turno',data:ds,turno:rt.turno_richiesto,testo:'Richiesta turno approvata ('+rt.turno_richiesto+')'};
+  return null;
+}
+
+// Chiede conferma e password prima di toccare una casella bloccata.
+// La password e' quella personale di chi e' collegato: cosi' resta traccia di chi ha forzato.
+function sbloccaCasella(blocco,pid){
+  const nome=(G.allStaff.find(s=>s.id===pid)||{}).name||'questa persona';
+  const dataIt=new Date(blocco.data+'T12:00:00').toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+  if(!confirm('Questa casella è bloccata.\n\n'+blocco.testo+' per '+nome+' — '+dataIt+
+    '.\n\nModificandola la approvazione resta registrata ma il turno non corrisponderà più.\n\nVuoi procedere?'))return false;
+  // chi e' entrato con un account personale usa la propria password,
+  // chi e' entrato con la password generale usa quella
+  const atteso=(currentManager&&currentManager.password)||G.managerPwd;
+  if(!atteso){alert('Non riesco a verificare la password. Rientra e riprova.');return false;}
+  const chi=(currentManager&&currentManager.password)?(currentManager.name||'') : 'password manager';
+  const dato=prompt('Per confermare, scrivi la tua password ('+chi+'):');
+  if(dato===null)return false;
+  if(dato!==atteso){alert('Password errata. La casella non è stata modificata.');return false;}
+  return true;
+}
+
 function setShift(di,pid,servizio,val){
+  const blocco=bloccoCasella(di,pid);
+  if(blocco&&!sbloccaCasella(blocco,pid)){renderTurni();return;}
   const wk=curWeek();pushUndo(wk);
   if(!wk.shift_assign[di])wk.shift_assign[di]={};
   const key=servizio==='pranzo'?pid+'_P':servizio==='cena'?pid+'_C':pid;
@@ -2227,6 +2296,15 @@ function generaBozza(){
     });
   });
 
+  // le caselle bloccate hanno la precedenza sulla bozza appena generata
+  const bloccatePrec=caselleBloccate();
+  bloccatePrec.forEach(b=>{
+    if(!newAssign[b.di])newAssign[b.di]={};
+    if(b.valori.base!==undefined)newAssign[b.di][b.pid]=b.valori.base;
+    if(b.valori.pranzo!==undefined)newAssign[b.di][b.pid+'_P']=b.valori.pranzo;
+    if(b.valori.cena!==undefined)newAssign[b.di][b.pid+'_C']=b.valori.cena;
+  });
+  if(bloccatePrec.length)warnings.push(bloccatePrec.length+' caselle bloccate (ferie e turni approvati) sono state mantenute');
   wk.shift_assign=newAssign;
   // Merge pre-assigned roles (from roleReqs) into role_assign
   Object.assign(wk.role_assign,newRoleAssign);
