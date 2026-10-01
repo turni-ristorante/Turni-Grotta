@@ -110,7 +110,8 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .cb-pill{display:flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;border:0.5px solid var(--border);background:var(--bg3);cursor:pointer;font-size:12px;}
 .cb-pill.checked{border-color:var(--blue-border);}
 .day-check-grid{display:flex;flex-wrap:wrap;gap:6px;}
-.fab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:1rem;}
+.fab-grid{display:grid;grid-template-columns:repeat(7,minmax(170px,1fr));gap:8px;margin-bottom:1rem;align-items:start;}
+.fab-scroll{overflow-x:auto;}
 .fab-card{background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:12px;}
 .fab-card h4{font-size:13px;font-weight:500;margin-bottom:8px;}
 .fab-slots{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;}
@@ -212,6 +213,15 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 </head><body>
 <!-- Compare panel overlay -->
 <div class="compare-overlay" id="compare-overlay" onclick="closeCompare()"></div>
+<!-- Pannello fabbisogno -->
+<div class="compare-overlay" id="fab-overlay" onclick="chiudiFab()"></div>
+<div class="compare-panel" id="fab-panel" style="border-left-color:var(--orange-border);">
+  <div class="compare-header" style="background:var(--orange-bg);border-bottom-color:var(--orange-border);">
+    <h3 id="fab-title" style="color:var(--orange-text);">Fabbisogno</h3>
+    <button onclick="chiudiFab()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--orange-text);padding:0 4px;">&times;</button>
+  </div>
+  <div class="compare-body" id="fab-body"></div>
+</div>
 <!-- Compare panel -->
 <div class="compare-panel" id="compare-panel">
   <div class="compare-header">
@@ -523,11 +533,56 @@ async function loadModuliExtra(){
   }catch(e){}
 }
 
+// Il fabbisogno e' indicizzato per giorno + tipo di apertura: "0_cena", "1_pranzo_cena".
+// Cosi' la stessa giornata ha due configurazioni distinte che non si sovrascrivono.
+function fabKeyGiorno(di,apertura){return String(di)+'_'+(apertura==='pranzo_cena'?'pranzo_cena':'cena');}
+
+function nuovoSlot(codes){
+  return{id:'s'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),codes:codes.slice()};
+}
+
+function getFabGiorno(di,apertura){
+  const k=fabKeyGiorno(di,apertura);
+  if(!G.fabbisogno[k])G.fabbisogno[k]={slots:[],roleReqs:{}};
+  const f=G.fabbisogno[k];
+  if(!f.slots)f.slots=[];
+  if(!f.roleReqs)f.roleReqs={};
+  f.slots.forEach(s=>{if(!s.id)s.id='s'+Math.random().toString(36).slice(2,8);});
+  return f;
+}
+
+// Converte la vecchia struttura ("0", "1_pranzo", "1_cena") nella nuova.
+// I turni delle due mezze giornate confluiscono in un'unica lista pranzo+cena.
 function migrateFabbisogno(){
-  // Ensure all fabbisogno keys are strings (old code used numeric keys)
-  const newFab={};
-  Object.keys(G.fabbisogno).forEach(k=>{newFab[String(k)]=G.fabbisogno[k];});
-  G.fabbisogno=newFab;
+  const vecchio=G.fabbisogno||{};
+  if(Object.keys(vecchio).some(k=>/_(pranzo_cena|cena)$/.test(k)&&!/_pranzo$/.test(k))&&
+     !Object.keys(vecchio).some(k=>/^\d+$/.test(k)||/_pranzo$/.test(k))){
+    // gia' nel formato nuovo
+    Object.values(vecchio).forEach(f=>{if(f&&!f.slots)f.slots=[];if(f&&!f.roleReqs)f.roleReqs={};});
+    return;
+  }
+  const nuovo={};
+  function dest(k){
+    if(!nuovo[k])nuovo[k]={slots:[],roleReqs:{}};
+    return nuovo[k];
+  }
+  Object.keys(vecchio).forEach(k=>{
+    const v=vecchio[k]||{};
+    const slots=(v.slots||[]).map(s=>nuovoSlot(s.codes||[]));
+    const m=String(k).match(/^(\d+)(?:_(pranzo|cena))?$/);
+    if(!m)return;
+    const di=m[1], parte=m[2];
+    const chiave = parte ? fabKeyGiorno(di,'pranzo_cena') : fabKeyGiorno(di,'cena');
+    const d=dest(chiave);
+    d.slots=d.slots.concat(slots);
+    Object.entries(v.roleReqs||{}).forEach(([fid,req])=>{
+      if(!d.roleReqs[fid])d.roleReqs[fid]={};
+      Object.entries(req).forEach(([ruolo,n])=>{
+        d.roleReqs[fid][ruolo]=Math.max(d.roleReqs[fid][ruolo]||0,n);
+      });
+    });
+  });
+  G.fabbisogno=nuovo;
 }
 function weekToDb(w){
   const obj={
@@ -722,6 +777,7 @@ function renderApp(){
         ${colorLegendHtml()}
         ${isManager()?`<button class="btn" style="font-size:11px;padding:4px 10px;" onclick="exportPDF()">&#128196; Esporta PDF</button>
           <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openCompare()">&#128065; Confronta</button>
+          <button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="apriFab()">&#128203; Fabbisogno</button>
           <button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>
         <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="doUndo()" title="Annulla ultima modifica">↩ Annulla</button>
         <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="clearWeek()" title="Svuota tutti i turni della settimana">🗑 Pulisci settimana</button>`:''}
@@ -738,6 +794,7 @@ function renderApp(){
       ${isManager()?`<div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
         <button class="btn primary" style="font-size:11px;padding:4px 12px;" onclick="autoFillRoles()">&#10022; Compila ruoli automaticamente</button>
         <button class="btn success" style="font-size:11px;padding:4px 12px;font-weight:600;" onclick="saveAll()">&#128190; Salva ruoli</button>
+        <button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="apriFab()">&#128203; Fabbisogno</button>
         <span id="incomplete-alert" style="font-size:12px;color:var(--red-text);align-self:center;display:none;"></span>
       </div>`:''}
       <div class="main-with-sidebar">
@@ -772,9 +829,12 @@ function renderApp(){
       <div id="staff-detail-panel"></div>
     </div>
     <div id="sec-fabbisogno" class="sec">
-      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Ogni slot = una persona necessaria. "Con equivalenze" include i turni intercambiabili del gruppo.</p>
-      <div class="fab-grid" id="fab-grid"></div>
-      <button class="btn primary" onclick="saveFabbisogno()">Salva fabbisogno</button>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+        <p style="font-size:13px;font-weight:500;" id="fab-page-title">Fabbisogno turni</p>
+        <button class="btn primary" style="margin-left:auto;" onclick="saveFabbisogno()">Salva fabbisogno</button>
+      </div>
+      <p style="font-size:11px;color:var(--text2);margin-bottom:12px;">Ogni riga è un turno necessario per coprire la giornata. La configurazione mostrata segue l'apertura della settimana attiva; con <b>altra &rsaquo;</b> apri quella dell'altro tipo di apertura. Trascina per riordinare, clicca una sigla per cambiarla.</p>
+      <div class="fab-scroll"><div class="fab-grid" id="fab-grid"></div></div>
     </div>
     <div id="sec-equivalenze" class="sec">
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Gruppi di turni intercambiabili.</p>
@@ -1719,6 +1779,7 @@ function setShift(di,pid,servizio,val){
   }
   markDirty();
   renderTurni();
+  aggiornaFabPanel();
 }
 
 // ===== GIORNALIERO =====
@@ -1731,7 +1792,7 @@ function renderDayNav(){
     <button class="day-btn ${d.tipo==='pranzo_cena'?'pc':''} ${d.idx===wk.selected_day?'active':''}" onclick="selDay(${d.idx})">${d.name}</button>`).join('');
   renderDayContent();
 }
-async function selDay(i){const wk=isManager()?curWeek():getDepWeek();if(!wk)return;wk.selected_day=i;renderDayNav();}
+async function selDay(i){const wk=isManager()?curWeek():getDepWeek();if(!wk)return;wk.selected_day=i;renderDayNav();aggiornaFabPanel();}
 
 function renderDayContent(){
   const wk=isManager()?curWeek():getDepWeek();if(!wk)return;
@@ -1810,6 +1871,7 @@ function setRole(key,val){
   wk.role_assign[key]=val;
   markDirty();
   renderDayContent();
+  aggiornaFabPanel();
 }
 
 // ===== STAFF =====
@@ -1969,120 +2031,164 @@ function removeRegola(i){G.regole.splice(i,1);renderRegole();}
 async function saveRegole(){await dbSaveConfig(configKey('regole'),G.regole);alert('Regole salvate!');}
 
 // ===== FABBISOGNO =====
-function getFab(fabKey){if(!G.fabbisogno[fabKey])G.fabbisogno[fabKey]={slots:[],maxRiposi:0};return G.fabbisogno[fabKey];}
+// Quale apertura ha quel giorno nella settimana attiva
+function aperturaGiorno(di){
+  const wk=curWeek();
+  const t=wk?(wk.day_config||[])[di]:'cena';
+  return t==='pranzo_cena'?'pranzo_cena':'cena';
+}
+function etichettaApertura(a){return a==='pranzo_cena'?'Pranzo e cena':'Solo cena';}
+
+// Un turno copre il pranzo se ha delle fasce di tipo pranzo
+function copreIlPranzo(code){
+  const s=getShift(code);if(!s)return false;
+  const idPranzo=ALL_FASCE.filter(f=>f.tipo==='pranzo').map(f=>f.id);
+  return (s.fasce||[]).some(fid=>idPranzo.includes(fid));
+}
+
 function renderFabbisogno(){
   const el=document.getElementById('fab-grid');if(!el)return;
   const wk=curWeek();
-  const workShifts=G.shifts.filter(s=>!s.is_off&&!s.is_ferie);
-  function renderCard(name,fabKey,servizio,dayIdx){
-    const fab=G.fabbisogno[fabKey]||{slots:[],maxRiposi:0,roleReqs:{}};
-    if(!fab.roleReqs)fab.roleReqs={};
-    const slotsHtml=(fab.slots||[]).map((slot,si)=>{
-      const tags=slot.codes.map(c=>`<span class="fab-shift-tag" style="${shiftColorStyle(c)}">${c}</span>`).join('<span style="font-size:10px;color:var(--text3);padding:0 2px;">o</span>');
-      return`<div class="fab-slot"><div class="fab-slot-codes">${tags}</div><button style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;margin-left:auto;" onclick="removeFabSlot('${fabKey}',${si})">×</button></div>`;
-    }).join('');
-    const border=servizio==='pranzo'?'border-top:2px solid #f5d76e;':servizio==='cena'?'border-top:2px solid #93b4f7;':'';
-    const sub=servizio==='pranzo'?' <span style="font-size:10px;font-weight:400;color:#7a5c00;">Pranzo</span>':servizio==='cena'?' <span style="font-size:10px;font-weight:400;color:#0a3d6e;">Cena</span>':'';
-    // Fasce to show role reqs for
-    const tipo2=wk?wk.day_config[dayIdx]||'cena':'cena';
-    const allFasceForCard=(tipo2==='pranzo_cena'?IDX_PC:IDX_CENA).map(i=>fascia(i)).filter(Boolean);
-    const fasceForCard=allFasceForCard.filter(f=>{
-      if(!servizio)return true;
-      if(servizio==='pranzo')return f.tipo==='pranzo';
-      return f.tipo==='cena';
-    });
-    // Role reqs section
-    let roleReqsHtml='<div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--border);">';
-    roleReqsHtml+=`<p style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:6px;">Ruoli richiesti per fascia</p>`;
-    fasceForCard.forEach(f=>{
-      const reqs=(fab.roleReqs[f.id])||{};
-      roleReqsHtml+=`<div style="margin-bottom:8px;"><span style="font-size:10px;font-weight:600;color:var(--text2);display:block;margin-bottom:3px;">${f.label}</span>`;
-      roleReqsHtml+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:3px;">`;
-      ROLES.forEach(r=>{
-        const val=reqs[r]||0;
-        roleReqsHtml+=`<div style="display:flex;align-items:center;gap:3px;font-size:11px;">
-          <input type="number" min="0" max="20" value="${val}" onchange="setRoleReq('${fabKey}',${f.id},'${r}',this.value)"
-            style="width:34px;padding:2px 3px;border-radius:4px;border:0.5px solid var(--border2);font-family:inherit;font-size:11px;text-align:center;">
-          <span style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;" title="${r}">${r}</span>
-        </div>`;
-      });
-      roleReqsHtml+=`</div></div>`;
-    });
-    roleReqsHtml+='</div>';
-    // Dup button
-    const dupHtml=`<div style="margin-top:6px;">
-      <button class="btn" style="font-size:11px;padding:3px 10px;" onclick="dupFabbisogno('${fabKey}')">📋 Duplica su...</button>
-    </div>`;
-    return`<div class="fab-card" style="${border}">
-      <h4>${name}${sub}</h4>
-      <div class="fab-slots">${slotsHtml||'<span style="font-size:11px;color:var(--text3);">Nessuno slot</span>'}</div>
-      <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
-        <select id="fab-sel-${fabKey}" style="font-size:11px;padding:3px 6px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
-          ${workShifts.map(s=>`<option value="${s.code}">${s.code}</option>`).join('')}
-        </select>
-        <button class="btn primary" style="font-size:11px;padding:3px 8px;" onclick="addFabSlotSingle('${fabKey}')">+ Singolo</button>
-        <button class="btn warn" style="font-size:11px;padding:3px 8px;" onclick="addFabSlotEquiv('${fabKey}')">+ Con equiv.</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <label style="font-size:11px;color:var(--text2);">Max riposi:</label>
-        <input type="number" min="0" max="30" value="${fab.maxRiposi||0}" onchange="setFabRiposi('${fabKey}',this.value)"
-          style="width:55px;padding:3px 6px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:11px;">
-      </div>
-      ${dupHtml}
-      ${roleReqsHtml}
-    </div>`;
-  }
-  let html='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:1rem;">';
-  DAY_NAMES.forEach((name,i)=>{
-    const tipo=wk?wk.day_config[i]||'cena':'cena';
-    if(tipo==='chiuso')return;
-    if(tipo==='pranzo_cena'){
-      html+=renderCard(name,`${i}_pranzo`,'pranzo',i);
-      html+=renderCard(name,`${i}_cena`,'cena',i);
-    } else {
-      html+=renderCard(name,String(i),null,i);
+  const tit=document.getElementById('fab-page-title');
+  if(tit)tit.innerHTML='Fabbisogno turni — '+repLabel()+(wk?' <span style="font-size:11px;font-weight:400;color:var(--text2);">settimana attiva: '+wk.name+'</span>':'');
+  const turni=G.shifts.filter(s=>!s.is_off&&!s.is_ferie&&s.code!=='MALATTIA');
+  let html='';
+  DAY_NAMES.forEach((nome,di)=>{
+    const tipo=wk?(wk.day_config||[])[di]:'cena';
+    if(tipo==='chiuso'){
+      html+=`<div class="fab-card" style="opacity:.55;">
+        <div style="font-size:12px;font-weight:600;margin-bottom:3px;">${nome}</div>
+        <span style="font-size:9px;font-weight:600;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border);padding:1px 6px;border-radius:20px;">Chiuso</span>
+      </div>`;return;
     }
+    const inUso=aperturaGiorno(di);
+    const mostrata=(window._fabAltra&&window._fabAltra[di])?(inUso==='cena'?'pranzo_cena':'cena'):inUso;
+    const fab=getFabGiorno(di,mostrata);
+    const pc=mostrata==='pranzo_cena';
+    const diversa=mostrata!==inUso;
+    const slotsHtml=fab.slots.map((s,si)=>{
+      const chips=s.codes.map(code=>
+        `<span onclick="cambiaCodiceSlot(${di},'${mostrata}','${s.id}',${s.codes.indexOf(code)})"
+           title="Clicca per cambiare" style="${shiftColorStyle(code)}padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">${code}</span>`
+      ).join('<span style="font-size:9px;color:var(--text3);padding:0 2px;">o</span>');
+      const tag=s.codes.some(copreIlPranzo)&&pc
+        ? '<span style="font-size:8px;font-weight:700;color:#7a5c00;background:#fff8dd;border:0.5px solid #f5d76e;padding:1px 4px;border-radius:3px;">P+C</span>':'';
+      return `<div draggable="true"
+        ondragstart="fabDragStart(event,${di},'${mostrata}',${si})"
+        ondragover="event.preventDefault()"
+        ondrop="fabDrop(event,${di},'${mostrata}',${si})"
+        style="display:flex;align-items:center;gap:5px;padding:4px 6px;background:var(--bg3);border-radius:6px;margin-bottom:4px;cursor:grab;">
+        <span style="color:var(--text3);font-size:12px;">&#10287;</span>
+        <span style="flex:1;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${chips}${tag}</span>
+        <span onclick="rimuoviSlot(${di},'${mostrata}','${s.id}')" style="color:var(--text3);font-size:13px;cursor:pointer;" title="Togli">&times;</span>
+      </div>`;
+    }).join('');
+    const nPranzo=fab.slots.filter(s=>s.codes.some(copreIlPranzo)).length;
+    html+=`<div class="fab-card" style="${pc?'border-color:#f5d76e;':''}${diversa?'box-shadow:0 0 0 2px var(--blue-border);':''}">
+      <div style="margin-bottom:7px;">
+        <div style="font-size:12px;font-weight:600;margin-bottom:3px;">${nome}</div>
+        <span style="font-size:9px;font-weight:600;background:${pc?'#fff8dd':'var(--bg3)'};color:${pc?'#7a5c00':'var(--text2)'};border:0.5px solid ${pc?'#f5d76e':'var(--border)'};padding:1px 6px;border-radius:20px;">${etichettaApertura(mostrata)}</span>
+        <span onclick="alternaFab(${di})" style="font-size:9px;color:var(--blue-text);cursor:pointer;margin-left:4px;">altra &rsaquo;</span>
+        ${diversa?'<div style="font-size:9px;color:var(--blue-text);margin-top:3px;">non è l\'apertura di questa settimana</div>':''}
+      </div>
+      ${slotsHtml||'<p style="font-size:10px;color:var(--text3);margin-bottom:4px;">Nessun turno</p>'}
+      <div style="display:flex;gap:3px;margin-top:6px;">
+        <select id="fabsel-${di}-${mostrata}" style="flex:1;font-size:10px;padding:3px 4px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+          ${turni.map(s=>`<option value="${s.code}">${s.code}</option>`).join('')}
+        </select>
+        <button class="btn primary" style="font-size:10px;padding:3px 7px;" onclick="aggiungiSlot(${di},'${mostrata}',false)" title="Aggiungi">+</button>
+        <button class="btn warn" style="font-size:10px;padding:3px 6px;" onclick="aggiungiSlot(${di},'${mostrata}',true)" title="Aggiungi con equivalenze">+e</button>
+      </div>
+      <p style="font-size:10px;color:var(--text2);margin-top:6px;font-weight:500;">${fab.slots.length} turni</p>
+      ${pc?`<p style="font-size:9px;color:${nPranzo?'var(--text3)':'var(--red-text)'};margin-top:2px;">${nPranzo?nPranzo+' coprono il pranzo':'nessun turno copre il pranzo'}</p>`:''}
+      ${fab.slots.length?`<button class="btn" style="font-size:10px;padding:3px 8px;margin-top:6px;" onclick="copiaFabSu(${di},'${mostrata}')">Copia su...</button>`:
+        `<button class="btn" style="font-size:10px;padding:3px 8px;margin-top:6px;" onclick="partiDaLunedi(${di},'${mostrata}')">Parti dal lunedì</button>`}
+    </div>`;
   });
-  html+='</div>';
   el.innerHTML=html;
 }
-function addFabSlotSingle(fabKey){const sel=document.getElementById(`fab-sel-${fabKey}`);if(!sel)return;getFab(fabKey).slots.push({codes:[sel.value]});renderFabbisogno();}
-function addFabSlotEquiv(fabKey){const sel=document.getElementById(`fab-sel-${fabKey}`);if(!sel)return;getFab(fabKey).slots.push({codes:[...getEquivGroup(sel.value)]});renderFabbisogno();}
-function removeFabSlot(fabKey,si){if(!G.fabbisogno[fabKey])return;G.fabbisogno[fabKey].slots.splice(si,1);renderFabbisogno();}
-function setFabRiposi(fabKey,val){getFab(fabKey).maxRiposi=parseInt(val)||0;}
-function setRoleReq(fabKey,fasciaId,roleName,val){
-  const fab=getFab(fabKey);
-  if(!fab.roleReqs)fab.roleReqs={};
-  if(!fab.roleReqs[fasciaId])fab.roleReqs[fasciaId]={};
-  const n=parseInt(val)||0;
-  if(n>0)fab.roleReqs[fasciaId][roleName]=n;
-  else delete fab.roleReqs[fasciaId][roleName];
-}
-function dupFabbisogno(srcKey){
-  const wk=curWeek();if(!wk)return;
-  const allTargets=[];
-  DAY_NAMES.forEach((dn,i)=>{
-    const t=wk.day_config[i]||'cena';
-    if(t==='chiuso')return;
-    if(t==='pranzo_cena'){
-      allTargets.push({key:`${i}_pranzo`,label:`${dn} Pranzo`});
-      allTargets.push({key:`${i}_cena`,label:`${dn} Cena`});
-    } else {
-      allTargets.push({key:String(i),label:dn});
-    }
-  });
-  const targets=allTargets.filter(t=>t.key!==srcKey);
-  const msg='Duplica su quale giorno?\n\n'+targets.map((t,i)=>`${i+1}. ${t.label}`).join('\n')+'\n\nInserisci il numero:';
-  const ans=prompt(msg);
-  if(!ans)return;
-  const idx=parseInt(ans)-1;
-  if(isNaN(idx)||idx<0||idx>=targets.length){alert('Numero non valido.');return;}
-  const destKey=targets[idx].key;
-  const src=G.fabbisogno[srcKey]||{slots:[],maxRiposi:0,roleReqs:{}};
-  G.fabbisogno[destKey]=JSON.parse(JSON.stringify(src));
+
+function alternaFab(di){
+  if(!window._fabAltra)window._fabAltra={};
+  window._fabAltra[di]=!window._fabAltra[di];
   renderFabbisogno();
-  alert(`Copiato su "${targets[idx].label}"! Ricordati di salvare.`);
 }
+
+function aggiungiSlot(di,apertura,conEquiv){
+  const sel=document.getElementById(`fabsel-${di}-${apertura}`);if(!sel)return;
+  const codes=conEquiv?[...getEquivGroup(sel.value)]:[sel.value];
+  getFabGiorno(di,apertura).slots.push(nuovoSlot(codes));
+  renderFabbisogno();
+}
+
+function rimuoviSlot(di,apertura,sid){
+  const f=getFabGiorno(di,apertura);
+  f.slots=f.slots.filter(s=>s.id!==sid);
+  renderFabbisogno();
+}
+
+// Cambia una sigla sul posto, senza rifare lo slot
+function cambiaCodiceSlot(di,apertura,sid,idx){
+  const f=getFabGiorno(di,apertura);
+  const s=f.slots.find(x=>x.id===sid);if(!s)return;
+  const turni=G.shifts.filter(x=>!x.is_off&&!x.is_ferie&&x.code!=='MALATTIA').map(x=>x.code);
+  const elenco=turni.map((t,i)=>`${i+1}. ${t}`).join('\n');
+  const r=prompt('Sostituisci '+s.codes[idx]+' con quale turno?\n\n'+elenco+'\n\nNumero (o vuoto per togliere questa sigla dallo slot):');
+  if(r===null)return;
+  if(r.trim()===''){
+    s.codes.splice(idx,1);
+    if(!s.codes.length)f.slots=f.slots.filter(x=>x.id!==sid);
+    renderFabbisogno();return;
+  }
+  const i=parseInt(r)-1;
+  if(isNaN(i)||i<0||i>=turni.length){alert('Numero non valido.');return;}
+  s.codes[idx]=turni[i];
+  renderFabbisogno();
+}
+
+let _fabDrag=null;
+function fabDragStart(e,di,apertura,si){_fabDrag={di,apertura,si};}
+function fabDrop(e,di,apertura,si){
+  e.preventDefault();
+  if(!_fabDrag||_fabDrag.di!==di||_fabDrag.apertura!==apertura||_fabDrag.si===si)return;
+  const f=getFabGiorno(di,apertura);
+  const m=f.slots.splice(_fabDrag.si,1)[0];
+  f.slots.splice(si,0,m);
+  _fabDrag=null;
+  renderFabbisogno();
+}
+
+function partiDaLunedi(di,apertura){
+  const base=getFabGiorno(0,apertura);
+  if(!base.slots.length){alert('Il lunedì non ha ancora turni da cui partire.');return;}
+  if(!confirm('Copiare qui i '+base.slots.length+' turni del lunedì ('+etichettaApertura(apertura)+')?'))return;
+  const f=getFabGiorno(di,apertura);
+  f.slots=base.slots.map(s=>nuovoSlot(s.codes));
+  f.roleReqs=JSON.parse(JSON.stringify(base.roleReqs||{}));
+  renderFabbisogno();
+}
+
+function copiaFabSu(di,apertura){
+  const aperti=DAY_NAMES.map((n,i)=>({n,i})).filter(x=>{
+    const wk=curWeek();const t=wk?(wk.day_config||[])[x.i]:'cena';
+    return t!=='chiuso'&&x.i!==di;
+  });
+  if(!aperti.length){alert('Non ci sono altri giorni aperti.');return;}
+  const r=prompt('Copiare i turni di '+DAY_NAMES[di]+' su quale giorno?\n\n'
+    +aperti.map((x,k)=>`${k+1}. ${x.n} (${etichettaApertura(aperturaGiorno(x.i))})`).join('\n')+'\n\nNumero:');
+  if(!r)return;
+  const k=parseInt(r)-1;
+  if(isNaN(k)||k<0||k>=aperti.length){alert('Numero non valido.');return;}
+  const dest=aperti[k].i;
+  const da=getFabGiorno(di,apertura);
+  const a=getFabGiorno(dest,aperturaGiorno(dest));
+  a.slots=da.slots.map(s=>nuovoSlot(s.codes));
+  a.roleReqs=JSON.parse(JSON.stringify(da.roleReqs||{}));
+  renderFabbisogno();
+  alert('Copiato su '+aperti[k].n+'. Ricordati di salvare.');
+}
+
+
 async function saveFabbisogno(){await dbSaveConfig(configKey('fabbisogno'),G.fabbisogno);alert('Fabbisogno salvato!');}
 
 // ===== GENERA BOZZA =====
@@ -2117,10 +2223,10 @@ function generaBozza(){
   const sessions=[];
   openDays.forEach(d=>{
     if(d.tipo==='pranzo_cena'){
-      sessions.push({di:d.idx,fabKey:`${d.idx}_pranzo`,servizio:'pranzo',dayName:DAY_NAMES[d.idx]});
-      sessions.push({di:d.idx,fabKey:`${d.idx}_cena`,servizio:'cena',dayName:DAY_NAMES[d.idx]});
+      sessions.push({di:d.idx,fabKey:fabKeyGiorno(d.idx,'pranzo_cena'),servizio:'pranzo',dayName:DAY_NAMES[d.idx]});
+      sessions.push({di:d.idx,fabKey:fabKeyGiorno(d.idx,'pranzo_cena'),servizio:'cena',dayName:DAY_NAMES[d.idx]});
     } else {
-      sessions.push({di:d.idx,fabKey:String(d.idx),servizio:null,dayName:DAY_NAMES[d.idx]});
+      sessions.push({di:d.idx,fabKey:fabKeyGiorno(d.idx,'cena'),servizio:null,dayName:DAY_NAMES[d.idx]});
     }
   });
 
@@ -2252,24 +2358,19 @@ function generaBozza(){
     });
   });
 
-  // PASS 2: assign OFF — use first fab of each day for maxRiposi
+  // PASS 2: i riposi non si configurano piu'. Chi non ha un turno quel giorno,
+  // e non ha ancora riposato nella settimana, prende OFF.
   openDays.forEach(d=>{
     const di=d.idx;
-    const fabKey=d.tipo==='pranzo_cena'?`${di}_cena`:String(di);
-    const fab=G.fabbisogno[fabKey];
-    const riposiMax=fab?fab.maxRiposi||0:0;
-    if(riposiMax<=0)return;
     // Person already assigned = any of their keys for this day
     const alreadyHasShift=p=>{
       return !!(newAssign[di][p.id]||newAssign[di][p.id+'_P']||newAssign[di][p.id+'_C']);
     };
-    let riposiCount=0;
     eligibleStaff
       .filter(p=>!alreadyHasShift(p)&&weekOffDays[p.id]===0)
       .sort((a,b)=>weekWorkDays[a.id]-weekWorkDays[b.id])
       .forEach(p=>{
-        if(riposiCount>=riposiMax)return;
-        newAssign[di][p.id]='OFF';weekOffDays[p.id]++;riposiCount++;
+        newAssign[di][p.id]='OFF';weekOffDays[p.id]++;
       });
   });
 
@@ -4563,6 +4664,123 @@ async function riattivaStaff(id,name){
     alert(name+' riattivato! Ricarica la pagina per vederlo nei turni.');
   }catch(e){alert('Errore durante la riattivazione.');}
 }
+// ===== PANNELLO FABBISOGNO =====
+function apriFab(){
+  const p=document.getElementById('fab-panel'), o=document.getElementById('fab-overlay');
+  if(!p)return;
+  p.classList.add('open'); o.classList.add('open');
+  aggiornaFabPanel();
+}
+function chiudiFab(){
+  document.getElementById('fab-panel')?.classList.remove('open');
+  document.getElementById('fab-overlay')?.classList.remove('open');
+}
+function fabPanelAperto(){return !!document.getElementById('fab-panel')?.classList.contains('open');}
+
+function aggiornaFabPanel(){
+  if(!fabPanelAperto())return;
+  const corpo=document.getElementById('fab-body');
+  const tit=document.getElementById('fab-title');
+  if(!corpo)return;
+  const suGiornaliero=document.getElementById('sec-giornaliero')?.classList.contains('active');
+  if(suGiornaliero){
+    const wk=curWeek();
+    const di=wk?wk.selected_day||0:0;
+    if(tit)tit.textContent='Fabbisogno — '+DAY_NAMES[di];
+    corpo.innerHTML=fabPanelGiorno(di);
+  } else {
+    if(tit)tit.textContent='Fabbisogno — '+repLabel();
+    corpo.innerHTML=fabPanelSettimana();
+  }
+}
+
+function fabPanelSettimana(){
+  const wk=curWeek();
+  if(!wk)return '<p style="font-size:12px;color:var(--text3);">Nessuna settimana attiva.</p>';
+  let html='<p style="font-size:10px;color:var(--text2);padding:6px 0;">Turni ancora da assegnare in rosso. Si aggiorna mentre compili.</p>';
+  let totRich=0,totCop=0;
+  DAY_NAMES.forEach((nome,di)=>{
+    const tipo=(wk.day_config||[])[di];
+    if(tipo==='chiuso')return;
+    const ap=aperturaGiorno(di);
+    const fab=getFabGiorno(di,ap);
+    if(!fab.slots.length)return;
+    const giorno=(wk.shift_assign||{})[di]||{};
+    // una persona vale un turno: lo spezzato scritto su pranzo e cena non conta due volte
+    const presenti=[];
+    G.allStaff.filter(s=>repOf(s)===REP).forEach(s=>{
+      const suoi=[giorno[s.id],giorno[s.id+'_P'],giorno[s.id+'_C']].filter(v=>v&&!isFuoriServizio(v));
+      [...new Set(suoi)].forEach(v=>presenti.push(v));
+    });
+    const rimasti=presenti.slice();
+    let cop=0;
+    const chips=fab.slots.map(sl=>{
+      const trovato=sl.codes.find(cd=>rimasti.includes(cd));
+      if(trovato){
+        rimasti.splice(rimasti.indexOf(trovato),1); cop++;
+        return '<span style="'+shiftColorStyle(trovato)+'padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:0 3px 3px 0;display:inline-block;">'+trovato+'</span>';
+      }
+      return '<span style="background:#fff;border:1.5px dashed var(--red-border);color:var(--red-text);padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;margin:0 3px 3px 0;display:inline-block;">'+sl.codes.join('/')+'</span>';
+    }).join('');
+    const tot=fab.slots.length;
+    totRich+=tot; totCop+=cop;
+    const ok=cop>=tot, pc=ap==='pranzo_cena';
+    html+='<div style="padding:8px 0;border-bottom:0.5px solid var(--border);">'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">'
+      +'<span style="font-size:11px;font-weight:600;">'+nome+'</span>'
+      +'<span style="font-size:8px;font-weight:600;background:'+(pc?'#fff8dd':'var(--bg3)')+';color:'+(pc?'#7a5c00':'var(--text2)')+';border:0.5px solid '+(pc?'#f5d76e':'var(--border)')+';padding:1px 5px;border-radius:20px;">'+etichettaApertura(ap)+'</span>'
+      +'<span style="margin-left:auto;font-size:10px;font-weight:600;color:'+(ok?'var(--green-text)':'var(--red-text)')+';">'+cop+'/'+tot+'</span>'
+      +'</div><div>'+chips+'</div></div>';
+  });
+  const manca=totRich-totCop;
+  html+='<div style="padding:10px 0;font-size:11px;color:var(--text2);">Totale settimana: <b>'+totRich+' turni richiesti</b>, '+totCop+' assegnati'
+    +(manca>0?', <b style="color:var(--red-text);">'+manca+' mancanti</b>':'')+'</div>';
+  return html;
+}
+
+function fabPanelGiorno(di){
+  const wk=curWeek();
+  if(!wk)return '<p style="font-size:12px;color:var(--text3);">Nessuna settimana attiva.</p>';
+  const tipo=(wk.day_config||[])[di];
+  if(tipo==='chiuso')return '<p style="font-size:12px;color:var(--text3);">Giorno chiuso.</p>';
+  const ap=aperturaGiorno(di);
+  const fab=getFabGiorno(di,ap);
+  const fasce=(tipo==='pranzo_cena'?IDX_PC:IDX_CENA).map(i=>fascia(i)).filter(Boolean);
+  let html='<p style="font-size:10px;color:var(--text2);margin-bottom:10px;">Postazioni richieste per questa giornata, fascia per fascia. Segue il giorno che stai guardando e si aggiorna mentre assegni.</p>';
+  let vuoto=true;
+  fasce.forEach(f=>{
+    const req=(fab.roleReqs||{})[f.id]||{};
+    const chiesti=Object.keys(req).filter(r=>req[r]>0);
+    if(!chiesti.length)return;
+    vuoto=false;
+    let righe='',manca=0;
+    chiesti.forEach(ruolo=>{
+      const chi=G.allStaff.filter(p=>repOf(p)===REP).filter(p=>{
+        if(!personInFascia(wk,di,p.id,f,tipo))return false;
+        return wk.role_assign[di+'_'+f.id+'_'+p.id]===ruolo;
+      }).map(p=>p.name);
+      const n=chi.length,q=req[ruolo],ok=n>=q;
+      if(!ok)manca++;
+      righe+='<tr style="'+(ok?'':'background:#fef2f2;')+'">'
+        +'<td style="padding:3px 6px;font-size:10px;font-weight:500;border-bottom:0.5px solid var(--border);white-space:nowrap;">'+ruolo+'</td>'
+        +'<td style="padding:3px 6px;font-size:10px;color:var(--text2);border-bottom:0.5px solid var(--border);">'
+        +(chi.length?chi.join(', '):'<span style="color:var(--red-text);font-style:italic;">nessuno</span>')+'</td>'
+        +'<td style="padding:3px 6px;font-size:10px;font-weight:600;color:'+(ok?'var(--green-text)':'var(--red-text)')+';text-align:right;border-bottom:0.5px solid var(--border);">'+n+'/'+q+'</td></tr>';
+    });
+    const bg=f.tipo==='pranzo'?'#fff8dd':'#ddeeff';
+    const colf=f.tipo==='pranzo'?'#7a5c00':'#0a3d6e';
+    html+='<div style="margin-bottom:12px;">'
+      +'<div style="display:flex;align-items:center;gap:6px;background:'+bg+';color:'+colf+';padding:4px 8px;border-radius:5px;margin-bottom:4px;">'
+      +'<span style="font-size:11px;font-weight:600;">'+f.label+'</span>'
+      +'<span style="font-size:9px;">'+f.orario+'</span>'
+      +'<span style="margin-left:auto;font-size:10px;font-weight:600;color:'+(manca?'var(--red-text)':'var(--green-text)')+';">'+(manca?'manca '+manca:'completa')+'</span>'
+      +'</div><table style="width:100%;border-collapse:collapse;">'+righe+'</table></div>';
+  });
+  if(vuoto)html+='<p style="font-size:11px;color:var(--text3);">Per questa giornata non sono state indicate postazioni richieste. Le imposti dalla scheda Fabbisogno.</p>';
+  return html;
+}
+
+
 function openCompare(){
   const panel=document.getElementById('compare-panel');
   const overlay=document.getElementById('compare-overlay');
