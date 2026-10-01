@@ -833,8 +833,18 @@ function renderApp(){
         <p style="font-size:13px;font-weight:500;" id="fab-page-title">Fabbisogno turni</p>
         <button class="btn primary" style="margin-left:auto;" onclick="saveFabbisogno()">Salva fabbisogno</button>
       </div>
-      <p style="font-size:11px;color:var(--text2);margin-bottom:12px;">Ogni riga è un turno necessario per coprire la giornata. La configurazione mostrata segue l'apertura della settimana attiva; con <b>altra &rsaquo;</b> apri quella dell'altro tipo di apertura. Trascina per riordinare, clicca una sigla per cambiarla.</p>
-      <div class="fab-scroll"><div class="fab-grid" id="fab-grid"></div></div>
+      <p style="font-size:11px;color:var(--text2);margin-bottom:12px;" id="fab-page-desc"></p>
+      <div style="display:flex;gap:4px;margin-bottom:1rem;background:var(--bg3);border-radius:var(--radius);padding:3px;width:fit-content;">
+        <button id="fabtab-turni" onclick="setFabTab('turni')" style="padding:5px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;">Turni</button>
+        <button id="fabtab-ruoli" onclick="setFabTab('ruoli')" style="padding:5px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;">Postazioni</button>
+      </div>
+      <div id="fab-vista-turni">
+        <div class="fab-scroll"><div class="fab-grid" id="fab-grid"></div></div>
+      </div>
+      <div id="fab-vista-ruoli" style="display:none;">
+        <div class="day-nav" id="fabruoli-nav"></div>
+        <div id="fabruoli-corpo"></div>
+      </div>
     </div>
     <div id="sec-equivalenze" class="sec">
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Gruppi di turni intercambiabili.</p>
@@ -1106,7 +1116,7 @@ function goTab(t){
   if(t==='turni'){renderTurni();renderLegSidebar();}
   if(t==='giornaliero'){renderDayNav();renderLegSidebar();}
   if(t==='staff')renderStaff();
-  if(t==='fabbisogno')renderFabbisogno();
+  if(t==='fabbisogno')setFabTab(window._fabTab||'turni');
   if(t==='equivalenze')renderEquivalenze();
   if(t==='regole')renderRegole();
   if(t==='legenda')renderLegenda();
@@ -2106,6 +2116,102 @@ function renderFabbisogno(){
     </div>`;
   });
   el.innerHTML=html;
+}
+
+
+// --- Postazioni richieste: una giornata alla volta, postazioni per fascia ---
+function setFabTab(t){
+  window._fabTab=t;
+  const vt=document.getElementById('fab-vista-turni'), vr=document.getElementById('fab-vista-ruoli');
+  const bt=document.getElementById('fabtab-turni'), br=document.getElementById('fabtab-ruoli');
+  const desc=document.getElementById('fab-page-desc');
+  if(vt)vt.style.display=(t==='ruoli')?'none':'';
+  if(vr)vr.style.display=(t==='ruoli')?'':'none';
+  [[bt,t!=='ruoli'],[br,t==='ruoli']].forEach(([b,on])=>{
+    if(!b)return;
+    b.style.background=on?'#fff':'transparent';
+    b.style.color=on?'var(--text)':'var(--text2)';
+    b.style.fontWeight=on?'500':'400';
+  });
+  if(desc)desc.innerHTML=(t==='ruoli')
+    ? 'Quante persone servono in ogni postazione, fascia per fascia. Lascia vuoto dove non serve nessuno. Si configura una giornata alla volta.'
+    : 'Ogni riga è un turno necessario per coprire la giornata. La configurazione mostrata segue l\'apertura della settimana attiva; con <b>altra &rsaquo;</b> apri quella dell\'altro tipo di apertura. Trascina per riordinare, clicca una sigla per cambiarla.';
+  if(t==='ruoli')renderFabRuoli();else renderFabbisogno();
+}
+
+function renderFabRuoli(){
+  const nav=document.getElementById('fabruoli-nav'), corpo=document.getElementById('fabruoli-corpo');
+  if(!nav||!corpo)return;
+  const wk=curWeek();
+  if(window._fabRuoliGiorno===undefined)window._fabRuoliGiorno=0;
+  const di=window._fabRuoliGiorno;
+  nav.innerHTML=DAY_NAMES.map((n,i)=>{
+    const tipo=wk?(wk.day_config||[])[i]:'cena';
+    const pc=tipo==='pranzo_cena';
+    return `<button class="day-btn ${i===di?'active':''} ${pc?'pc':''}" onclick="window._fabRuoliGiorno=${i};renderFabRuoli()">${n}</button>`;
+  }).join('');
+  const tipo=wk?(wk.day_config||[])[di]:'cena';
+  if(tipo==='chiuso'){corpo.innerHTML='<p style="font-size:12px;color:var(--text3);">Giorno chiuso in questa settimana.</p>';return;}
+  const ap=aperturaGiorno(di);
+  const fab=getFabGiorno(di,ap);
+  const fasce=(tipo==='pranzo_cena'?IDX_PC:IDX_CENA).map(i=>fascia(i)).filter(Boolean);
+  const ruoli=repDef().roles;
+  const th=fasce.map(f=>`<th class="cb-th ${f.tipo==='pranzo'?'fp':'fc'}">${f.label}<br><span style="font-size:9px;font-weight:400;">${f.orario}</span></th>`).join('');
+  const righe=ruoli.map(r=>{
+    const celle=fasce.map(f=>{
+      const v=((fab.roleReqs||{})[f.id]||{})[r]||0;
+      return `<td style="padding:3px;text-align:center;">
+        <input type="number" min="0" max="20" value="${v||''}" placeholder="0"
+          onchange="setRoleReq(${di},'${ap}',${f.id},'${r.replace(/'/g,"\\'")}',this.value)"
+          style="width:48px;padding:3px 4px;border-radius:var(--radius);border:0.5px solid ${v?'var(--blue-border)':'var(--border2)'};background:${v?'var(--blue-bg)':'#fff'};font-size:12px;text-align:center;font-family:inherit;"></td>`;
+    }).join('');
+    return `<tr><td class="role-name-td" style="white-space:nowrap;">${r}</td>${celle}</tr>`;
+  }).join('');
+  const totali=fasce.map(f=>{
+    const req=(fab.roleReqs||{})[f.id]||{};
+    const n=Object.values(req).reduce((a,b)=>a+(b||0),0);
+    return `<td style="padding:4px;text-align:center;font-size:11px;font-weight:600;color:var(--text2);">${n||''}</td>`;
+  }).join('');
+  corpo.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin:0 0 10px;flex-wrap:wrap;">
+      <span style="font-size:13px;font-weight:500;">${DAY_NAMES[di]}</span>
+      <span style="font-size:9px;font-weight:600;background:${ap==='pranzo_cena'?'#fff8dd':'var(--bg3)'};color:${ap==='pranzo_cena'?'#7a5c00':'var(--text2)'};border:0.5px solid ${ap==='pranzo_cena'?'#f5d76e':'var(--border)'};padding:1px 7px;border-radius:20px;">${etichettaApertura(ap)}</span>
+      <button class="btn" style="font-size:11px;padding:3px 10px;" onclick="copiaRuoliSu(${di},'${ap}')">Copia su...</button>
+      ${di>0?`<button class="btn" style="font-size:11px;padding:3px 10px;" onclick="ruoliDaLunedi(${di},'${ap}')">Parti dal lunedì</button>`:''}
+    </div>
+    <div class="wrap"><table><thead><tr><th class="scol" style="min-width:140px;background:var(--bg3);">Postazione</th>${th}</tr></thead>
+    <tbody>${righe}
+    <tr class="count-row"><td class="scol" style="background:var(--bg3);">Totale persone</td>${totali}</tr></tbody></table></div>`;
+}
+
+function setRoleReq(di,apertura,fasciaId,ruolo,val){
+  const f=getFabGiorno(di,apertura);
+  if(!f.roleReqs[fasciaId])f.roleReqs[fasciaId]={};
+  const n=parseInt(val)||0;
+  if(n>0)f.roleReqs[fasciaId][ruolo]=n; else delete f.roleReqs[fasciaId][ruolo];
+  renderFabRuoli();
+}
+
+function ruoliDaLunedi(di,apertura){
+  const base=getFabGiorno(0,aperturaGiorno(0));
+  if(!Object.keys(base.roleReqs||{}).length){alert('Il lunedì non ha ancora postazioni da cui partire.');return;}
+  if(!confirm('Copiare qui le postazioni del lunedì?'))return;
+  getFabGiorno(di,apertura).roleReqs=JSON.parse(JSON.stringify(base.roleReqs));
+  renderFabRuoli();
+}
+
+function copiaRuoliSu(di,apertura){
+  const wk=curWeek();
+  const aperti=DAY_NAMES.map((n,i)=>({n,i})).filter(x=>x.i!==di&&(wk?(wk.day_config||[])[x.i]:'cena')!=='chiuso');
+  if(!aperti.length){alert('Non ci sono altri giorni aperti.');return;}
+  const r=prompt('Copiare le postazioni di '+DAY_NAMES[di]+' su quale giorno?\n\n'
+    +aperti.map((x,k)=>`${k+1}. ${x.n}`).join('\n')+'\n\nNumero:');
+  if(!r)return;
+  const k=parseInt(r)-1;
+  if(isNaN(k)||k<0||k>=aperti.length){alert('Numero non valido.');return;}
+  const dest=aperti[k].i;
+  getFabGiorno(dest,aperturaGiorno(dest)).roleReqs=
+    JSON.parse(JSON.stringify(getFabGiorno(di,apertura).roleReqs||{}));
+  alert('Copiato su '+aperti[k].n+'. Ricordati di salvare.');
 }
 
 function alternaFab(di){
