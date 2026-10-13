@@ -4891,13 +4891,22 @@ function openCompare(){
   const panel=document.getElementById('compare-panel');
   const overlay=document.getElementById('compare-overlay');
   const sel=document.getElementById('compare-week-sel');
-  if(!panel)return;
-  // Populate selector with all weeks except current
+  if(!panel||!sel)return;
+  // L'anteprima dell'archivio usa lo stesso pannello e nasconde il selettore:
+  // qui va rimesso, altrimenti il confronto resta senza scelta della settimana.
+  sel.style.display='';
+  const header=panel.querySelector('.compare-header h3');
+  if(header)header.textContent='\u{1F441} Confronto settimana';
+  // settimane in ordine cronologico, esclusa quella aperta
   const wk=curWeek();
-  sel.innerHTML=G.weeks
-    .filter(w=>w.id!==wk?.id)
+  sel.innerHTML=getWeeksSorted()
+    .filter(w=>w.id!==(wk&&wk.id))
     .map(w=>`<option value="${w.id}">${w.name}</option>`)
     .join('');
+  if(!sel.options.length){
+    document.getElementById('compare-body').innerHTML='<p style="font-size:12px;color:var(--text3);padding:12px;">Non ci sono altre settimane da confrontare.</p>';
+    panel.classList.add('open');overlay.classList.add('open');return;
+  }
   panel.classList.add('open');
   overlay.classList.add('open');
   loadCompare();
