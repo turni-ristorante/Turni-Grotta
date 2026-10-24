@@ -3190,6 +3190,36 @@ function statoGiornoFerie(r,dateStr){
 }
 
 // Ferie scritte direttamente nella griglia turni, senza passare da una richiesta
+// Colleghi dello stesso reparto con ferie APPROVATE in quel giorno, escluso
+// chi sta guardando. Le richieste ancora in attesa non compaiono.
+// Per gli operatori contano solo le settimane pubblicate: una bozza non deve
+// far trapelare ferie non ancora ufficiali.
+function ferieColleghiDelGiorno(dateStr,escludiId){
+  const out=[];const visti=new Set();
+  // 1) ferie approvate tramite richiesta
+  (G.ferieRichieste||[]).forEach(r=>{
+    if(!(r.giorni_approvati||[]).includes(dateStr))return;
+    const s=G.allStaff.find(x=>x.id===r.staff_id);
+    if(!s||repOf(s)!==REP)return;
+    if(s.id===escludiId||visti.has(s.id))return;
+    visti.add(s.id);out.push({id:s.id,name:s.name});
+  });
+  // 2) FERIE scritte a mano nella griglia turni
+  const wk=settimanaDelGiorno(dateStr);
+  if(wk&&wk.startDate&&(isManager()||isPublished(wk))){
+    const d=new Date(dateStr+'T12:00:00');
+    const di=Math.round((d-new Date(wk.startDate+'T12:00:00'))/(1000*60*60*24));
+    const giorno=(wk.shift_assign||{})[di]||{};
+    G.allStaff.filter(s=>repOf(s)===REP).forEach(s=>{
+      if(s.id===escludiId||visti.has(s.id))return;
+      if([giorno[s.id],giorno[s.id+'_P'],giorno[s.id+'_C']].some(v=>v==='FERIE')){
+        visti.add(s.id);out.push({id:s.id,name:s.name});
+      }
+    });
+  }
+  return out;
+}
+
 function ferieDaTurni(dateStr){
   const out=[];
   const wk=settimanaDelGiorno(dateStr);
@@ -3296,7 +3326,7 @@ function buildFerieRichiesteHtml(){
         <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;">
           <div style="flex:1;min-width:200px;">
             <div style="font-weight:500;">${staff?staff.name:'?'}</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:4px;">${giorni.length} giorni richiesti</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px;">${giorni.length} giorn${giorni.length===1?"o":"i"} richiest${giorni.length===1?"o":"i"}</div>
             <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:6px;">
               ${giorni.map(g=>{
                 const d=new Date(g+'T12:00:00');
@@ -3330,11 +3360,26 @@ function buildFerieRichiesteHtml(){
       const tot=(r.giorni||[]).length;
       const statoColor=r.stato==='approvata'?'var(--green-text)':r.stato==='parziale'?'var(--orange-text)':'var(--red-text)';
       const statoLabel=r.stato==='approvata'?'✓ Approvata':r.stato==='parziale'?`◐ Parziale (${app.length}/${tot})`:'✗ Rifiutata';
-      return `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-        <span style="font-weight:500;flex:1;">${staff?staff.name:'?'}</span>
-        <span style="font-size:11px;color:var(--text2);">${tot} giorni</span>
-        <span style="font-size:11px;font-weight:600;color:${statoColor};">${statoLabel}</span>
-        <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="riapriFerie('${r.id}')">↺ Riapri</button>
+      const rif=r.giorni_rifiutati||[];
+      // i giorni veri, colorati per esito: cosi' si vede cosa e' stato deciso
+      const pillole=(r.giorni||[]).map(g=>{
+        const gd=new Date(g+'T12:00:00');
+        const ok=app.includes(g), no=rif.includes(g);
+        const st=ok?'background:var(--green-bg);border-color:var(--green-border);color:var(--green-text);'
+          :no?'background:var(--red-bg);border-color:var(--red-border);color:var(--red-text);'
+          :'background:#fff;border-color:var(--border);color:var(--text2);';
+        return `<span style="font-size:10px;border:0.5px solid;padding:1px 6px;border-radius:4px;${st}">${gd.getDate()}/${gd.getMonth()+1}</span>`;
+      }).join('');
+      return `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <span style="font-weight:500;flex:1;">${staff?staff.name:'?'}</span>
+          <span style="font-size:11px;color:var(--text2);">${tot} giorn${tot===1?"o":"i"}</span>
+          <span style="font-size:11px;font-weight:600;color:${statoColor};">${statoLabel}</span>
+          <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="riapriFerie('${r.id}')">↺ Riapri</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:7px;">${pillole}</div>
+        ${r.nota?`<p style="font-size:11px;color:var(--text2);margin-top:6px;">&#128172; ${r.nota}</p>`:''}
+        ${r.risposta_nota?`<p style="font-size:11px;color:var(--text2);margin-top:5px;padding:5px 8px;background:#fff;border-radius:4px;">Tua risposta: ${r.risposta_nota}</p>`:''}
       </div>`;
     }).join('');
   }
@@ -3800,7 +3845,7 @@ function renderFerieStaff(el){
     html+=`<div style="background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:var(--radius);padding:10px 14px;margin-bottom:0.75rem;">
       <p style="font-size:11px;color:var(--yellow-text);">Le ferie vanno chieste con almeno <b>${G.feriePreavviso}${G.feriePreavviso===1?' giorno':' giorni'}</b> di anticipo: i giorni più vicini di così non si possono selezionare.</p></div>`;
   }
-  html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Clicca sui giorni per selezionarli, poi invia la richiesta.</p>`;
+  html+=`<p style="font-size:11px;color:var(--text2);margin-bottom:1rem;">Clicca sui giorni per selezionarli, poi invia la richiesta. I pallini verdi in alto a destra indicano i colleghi del tuo reparto già in ferie.</p>`;
 
   // Month tabs
   html+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:1rem;">';
@@ -3844,15 +3889,52 @@ function renderFerieStaff(el){
     else if(selected){bg='var(--blue-bg)';border='var(--blue-border)';}
     else if(!check.ok){bg='var(--bg3)';border='var(--border)';}
     const clickable=!isPast&&!giaRichiesto&&check.ok;
+    // Colleghi gia' in ferie quel giorno: un pallino ciascuno, in alto a destra
+    const coll=isPast?[]:ferieColleghiDelGiorno(dateStr,staffId);
+    const pallini=coll.slice(0,3).map(()=>
+      '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#16a34a;margin-left:2px;"></span>').join('')
+      +(coll.length>3?`<span style="font-size:8px;color:var(--text3);margin-left:2px;">+${coll.length-3}</span>`:'');
+    const tooltip=coll.length?'In ferie: '+coll.map(x=>x.name).join(', '):(!check.ok?check.motivo:'');
     html+=`<div onclick="${clickable?`toggleFerieDay('${dateStr}')`:''}"
-      title="${!check.ok?check.motivo:''}"
-      style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:5px;min-height:52px;cursor:${clickable?'pointer':'default'};opacity:${!clickable&&!giaRichiesto?0.5:1};">
-      <div style="font-size:11px;font-weight:600;">${day}</div>
+      title="${tooltip}"
+      style="border:0.5px solid ${border};border-radius:6px;background:${bg};padding:5px;min-height:56px;cursor:${clickable?'pointer':'default'};opacity:${!clickable&&!giaRichiesto?0.5:1};">
+      <div style="display:flex;align-items:flex-start;">
+        <span style="font-size:11px;font-weight:600;flex:1;">${day}</span>
+        <span style="white-space:nowrap;">${pallini}</span>
+      </div>
       ${selected?'<div style="font-size:9px;color:var(--blue-text);margin-top:2px;">✓</div>':''}
       ${label?`<div style="font-size:8px;margin-top:2px;">${label}</div>`:''}
     </div>`;
   }
   html+='</div>';
+
+  // Legenda ed elenco dei colleghi in ferie nel mese mostrato
+  const perPersona={};
+  const oggiZero=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  for(let day=1;day<=daysInMonth;day++){
+    const dd=new Date(year,month,day);
+    if(dd<oggiZero)continue;   // i giorni passati non servono a programmare
+    const ds=dateToStr(dd);
+    ferieColleghiDelGiorno(ds,staffId).forEach(x=>{
+      if(!perPersona[x.id])perPersona[x.id]={name:x.name,giorni:[]};
+      perPersona[x.id].giorni.push(day);
+    });
+  }
+  const elenco=Object.values(perPersona).sort((a,b)=>a.giorni[0]-b.giorni[0]);
+  if(elenco.length){
+    html+=`<div style="display:flex;gap:14px;margin:12px 0 1rem;flex-wrap:wrap;font-size:11px;color:var(--text2);align-items:center;">
+      <span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#16a34a;vertical-align:middle;"></span> collega in ferie</span>
+    </div>
+    <div style="background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;">
+      <p style="font-size:12px;font-weight:500;margin-bottom:6px;">Colleghi di ${repLabel()} — ${MONTHS_IT[month]}</p>
+      <p style="font-size:10px;color:var(--text3);margin-bottom:8px;">Serve solo a orientarti: le ferie le decide comunque il responsabile.</p>
+      ${elenco.map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:0.5px solid var(--border);">
+        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#16a34a;flex-shrink:0;"></span>
+        <span style="font-size:12px;font-weight:500;min-width:72px;">${p.name}</span>
+        <span style="font-size:11px;color:var(--text2);flex:1;">${p.giorni.join(', ')} ${MONTHS_IT[month]}</span>
+      </div>`).join('')}
+    </div>`;
+  }
 
   // Selection summary + submit
   if(window._ferieSelezione.length){
@@ -3864,6 +3946,22 @@ function renderFerieStaff(el){
           return `<span style="font-size:10px;background:#fff;border:0.5px solid var(--blue-border);padding:2px 7px;border-radius:4px;">${d.getDate()}/${d.getMonth()+1}</span>`;
         }).join('')}
       </div>
+      ${(()=>{
+        // Colleghi gia' in ferie nei giorni appena selezionati, una riga per giorno
+        const righe=[];
+        [...window._ferieSelezione].sort().forEach(g=>{
+          const nomi=ferieColleghiDelGiorno(g,staffId).map(x=>x.name);
+          if(!nomi.length)return;
+          const d=new Date(g+'T12:00:00');
+          righe.push(`<div style="display:flex;gap:8px;font-size:11px;padding:2px 0;">
+            <span style="color:var(--text2);min-width:58px;">${d.getDate()} ${MONTHS_IT[d.getMonth()].slice(0,3)}</span>
+            <span style="font-weight:500;">${nomi.join(', ')}</span></div>`);
+        });
+        if(!righe.length)return '';
+        return `<div style="background:#fff;border:0.5px solid var(--blue-border);border-radius:var(--radius);padding:8px 10px;margin-bottom:10px;">
+          <p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;color:var(--blue-text);opacity:.8;">Già in ferie</p>
+          ${righe.join('')}</div>`;
+      })()}
       <textarea id="ferie-nota" placeholder="Nota (opzionale)" rows="2" style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:12px;resize:none;margin-bottom:8px;"></textarea>
       <div style="display:flex;gap:8px;">
         <button class="btn primary" onclick="inviaRichiestaFerie()">Invia richiesta</button>
@@ -3885,7 +3983,7 @@ function renderFerieStaff(el){
       const statoLabel=r.stato==='in_attesa'?'⏳ In attesa':r.stato==='approvata'?'✓ Approvata':r.stato==='parziale'?`◐ Parziale (${app.length}/${giorni.length})`:'✗ Rifiutata';
       return `<div style="background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
-          <span style="flex:1;font-size:12px;font-weight:500;">${giorni.length} giorni richiesti</span>
+          <span style="flex:1;font-size:12px;font-weight:500;">${giorni.length} giorn${giorni.length===1?"o":"i"} richiest${giorni.length===1?"o":"i"}</span>
           <span style="font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;border:0.5px solid;${statoStyle}">${statoLabel}</span>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:3px;">
@@ -4087,16 +4185,21 @@ function renderRichiesteManager(el){
     html+=done.slice(0,20).map(r=>{
       const staff=G.allStaff.find(s=>s.id===r.staff_id);
       const dateObj=new Date(r.data+'T12:00:00');
-      const dateLabel=dateObj.toLocaleDateString('it-IT',{day:'numeric',month:'short',year:'numeric'});
+      const dateLabel=dateObj.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
       const statoColor=r.stato==='approvata'?'color:var(--green-text);':'color:var(--red-text);';
-      return `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <span style="font-weight:500;flex:1;">${staff?staff.name:'?'}</span>
-        <span style="font-size:11px;color:var(--text2);">${dateLabel}</span>
-        <span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:#fff;border:0.5px solid var(--border);">${r.turno_richiesto}</span>
-        <span style="font-size:11px;font-weight:600;${statoColor}">${r.stato==='approvata'?'✓ Approvata':'✗ Rifiutata'}</span>
-        ${r.esclusa_conteggio?'<span style="font-size:10px;color:var(--blue-text);background:var(--blue-bg);padding:1px 7px;border-radius:20px;">non conteggiata</span>':''}
-        <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="riapriRichiesta('${r.id}')" title="Riporta in attesa">↺ Riapri</button>
-        ${!r.esclusa_conteggio?`<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="escludiConteggio('${r.id}')" title="Non conta per il limite mensile">⊘ Non contare</button>`:''}
+      const colTurno=r.turno_richiesto?shiftColorStyle(r.turno_richiesto):'';
+      return `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:6px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <span style="font-weight:500;flex:1;">${staff?staff.name:'?'}</span>
+          <span style="font-size:11px;color:var(--text2);">${dateLabel}</span>
+          <span style="font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;${colTurno||'background:#fff;border:0.5px solid var(--border);'}">${r.turno_richiesto}</span>
+          <span style="font-size:11px;font-weight:600;${statoColor}">${r.stato==='approvata'?'✓ Approvata':'✗ Rifiutata'}</span>
+          ${r.esclusa_conteggio?'<span style="font-size:10px;color:var(--blue-text);background:var(--blue-bg);padding:1px 7px;border-radius:20px;">non conteggiata</span>':''}
+          <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="riapriRichiesta('${r.id}')" title="Riporta in attesa">↺ Riapri</button>
+          ${!r.esclusa_conteggio?`<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="escludiConteggio('${r.id}')" title="Non conta per il limite mensile">⊘ Non contare</button>`:''}
+        </div>
+        ${r.nota?`<p style="font-size:11px;color:var(--text2);margin-top:6px;">&#128172; ${r.nota}</p>`:''}
+        ${r.risposta_nota?`<p style="font-size:11px;color:var(--text2);margin-top:5px;padding:5px 8px;background:#fff;border-radius:4px;">Tua risposta: ${r.risposta_nota}</p>`:''}
       </div>`;
     }).join('');
   }
