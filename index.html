@@ -2910,7 +2910,7 @@ function legRiga(s,i,arch){
     h+=`<tr draggable="true" ondragstart="legDragStart(event,${i})" ondragover="legDragOver(event,${i})" ondrop="legDrop(event,${i})" style="cursor:grab;">
       <td style="padding:3px 5px;color:var(--text3);font-size:16px;cursor:grab;">⠿</td>`;
   }
-  h+=`<span style="${shiftColorStyle(s.code)}padding:2px 8px;border-radius:4px;font-weight:600;font-size:12px;">${s.code}</span>
+  h+=`<td><span style="${shiftColorStyle(s.code)}padding:2px 8px;border-radius:4px;font-weight:600;font-size:12px;">${s.code}</span>
           <input type="text" value="${s.code}" onchange="G.shifts[${i}].code=this.value;renderLegSidebar();" style="width:52px;font-weight:600;font-family:inherit;margin-left:4px;"></td>
       <td><input type="text" value="${s.s1||''}" placeholder="inizio" onchange="G.shifts[${i}].s1=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e1||''}" placeholder="fine" onchange="G.shifts[${i}].e1=this.value" style="width:46px;font-family:inherit;"></td>
       <td><input type="text" value="${s.s2||''}" placeholder="inizio" onchange="G.shifts[${i}].s2=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e2||''}" placeholder="fine" onchange="G.shifts[${i}].e2=this.value" style="width:46px;font-family:inherit;"></td>`;
