@@ -3867,13 +3867,18 @@ function ferieDisponibili(p,anno,prof){
   return(m===null?0:m)+ferieResiduo(p,anno,prof);
 }
 function ferieRestanti(p,anno){return ferieDisponibili(p,anno)-ferieUsate(p.id,anno);}
-function setMonteFerie(pid,anno,val){
+// Il monte ferie vive sulla persona, non sulla settimana: va salvato
+// con dbSaveStaff. Il tasto Salva in alto salva la settimana e non
+// c'entra niente, come per i turni che una persona puo' fare o i
+// giorni lavorativi, che infatti salvano da soli appena li cambi.
+async function setMonteFerie(pid,anno,val){
   const p=G.allStaff.find(s=>s.id===pid);if(!p)return;
   if(!p.ferieMonte)p.ferieMonte={};
   const t=String(val||'').trim();
   if(t==='')delete p.ferieMonte[String(anno)];
   else p.ferieMonte[String(anno)]=Math.max(0,Number(t)||0);
-  markDirty();renderFerie();
+  await dbSaveStaff();
+  renderFerie();
 }
 function cambiaAnnoMonte(v){window._monteAnno=Number(v)||annoOggi();renderFerie();}
 
@@ -3923,7 +3928,7 @@ function buildFerieMonteHtml(){
     Le settimane senza data di inizio non vengono conteggiate, perch&eacute; non si sa a quale anno appartengono.
     Se una persona sfora, il saldo va in rosso ma non viene bloccato niente.</p>`;
   if(senzaMonte)html+=`<p style="font-size:11px;color:var(--orange-text);margin-top:6px;">&#9888; ${senzaMonte} person${senzaMonte===1?'a':'e'} senza monte impostato per il ${anno}: per loro il disponibile parte da zero.</p>`;
-  html+=`<p style="font-size:11px;color:var(--text3);margin-top:6px;">Ricordati di premere <b>Salva</b> in alto dopo aver cambiato i monte.</p>`;
+  html+=`<p style="font-size:11px;color:var(--text3);margin-top:6px;">I monte si salvano da soli appena li scrivi: non serve il tasto Salva in alto, che riguarda la settimana.</p>`;
   return html;
 }
 
