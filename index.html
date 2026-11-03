@@ -1205,6 +1205,7 @@ function renderApp(){
       <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;">
         <button class="btn primary" onclick="addShift()">+ Nuovo turno</button>
         <button class="btn" onclick="saveShifts()">Salva modifiche</button>
+        <button class="btn" style="margin-left:auto;border-color:var(--orange-border);color:var(--orange-text);background:var(--orange-bg);" onclick="caricaLegendaNovembre()">&#11015; Carica legenda sala di novembre</button>
       </div>
       <div class="wrap"><table class="leg-table" id="leg-main-table"></table></div>
     </div>
@@ -2901,6 +2902,94 @@ function generaBozza(){
 
 // ===== LEGENDA =====
 let legDragSrc=null;
+
+// ===== CARICAMENTO LEGENDA SALA DI NOVEMBRE (una tantum) =====
+// Serve a sostituire in un colpo solo la legenda della sala, il
+// fabbisogno e i turni che ogni persona puo' fare. I turni vecchi NON
+// vengono cancellati ma archiviati, cosi' le settimane passate
+// continuano a leggerli. Le sigle presenti in tutte e due le legende
+// (B1-B4, E1-E6) vengono per forza sostituite, perche' la tabella non
+// puo' tenere due turni con lo stesso codice: a quelle si lascia il
+// campo "fasce" vecchio, che e' quello che le settimane fino al
+// 1 novembre usano per sapere chi stava in quale fascia.
+// Tocca SOLO la sala. Dopo l'uso questo bottone non serve piu'.
+const CARICO_NOV={"turni":[{"code":"B1","s1":"","e1":"","s2":"17:00","e2":"01:00","pausa":"19:30/20:00"},{"code":"B2","s1":"","e1":"","s2":"18:00","e2":"00:30","pausa":""},{"code":"B3","s1":"","e1":"","s2":"18:00","e2":"01:00","pausa":""},{"code":"B4","s1":"","e1":"","s2":"19:30","e2":"02:30","pausa":""},{"code":"BR1","s1":"11:00","e1":"18:00","s2":"","e2":"","pausa":"15:30/16:00"},{"code":"C1","s1":"09:30","e1":"17:00","s2":"","e2":"","pausa":"11:30/12:00"},{"code":"C2","s1":"11:00","e1":"18:30","s2":"","e2":"","pausa":"12:00/12:30"},{"code":"C3","s1":"12:00","e1":"15:00","s2":"19:30","e2":"00:00","pausa":""},{"code":"C4","s1":"","e1":"","s2":"15:30","e2":"00:00","pausa":"17:30/18:00"},{"code":"C5","s1":"","e1":"","s2":"16:00","e2":"00:30","pausa":"18:30/19:00"},{"code":"C6","s1":"","e1":"","s2":"16:00","e2":"00:30","pausa":"18:00/18:30"},{"code":"C7","s1":"","e1":"","s2":"16:30","e2":"00:00","pausa":"19:00/19:30"},{"code":"C8","s1":"","e1":"","s2":"18:00","e2":"00:00","pausa":""},{"code":"C9","s1":"","e1":"","s2":"18:00","e2":"00:30","pausa":""},{"code":"C10","s1":"","e1":"","s2":"18:00","e2":"01:30","pausa":""},{"code":"C11","s1":"","e1":"","s2":"18:00","e2":"02:00","pausa":""},{"code":"C12","s1":"","e1":"","s2":"18:00","e2":"02:30","pausa":""},{"code":"C13","s1":"","e1":"","s2":"18:00","e2":"02:30","pausa":""},{"code":"C14","s1":"","e1":"","s2":"18:30","e2":"00:30","pausa":""},{"code":"C15","s1":"","e1":"","s2":"19:00","e2":"02:30","pausa":""},{"code":"C16","s1":"","e1":"","s2":"19:30","e2":"02:30","pausa":""},{"code":"C17","s1":"","e1":"","s2":"20:00","e2":"00:30","pausa":""},{"code":"C18","s1":"","e1":"","s2":"20:00","e2":"01:30","pausa":""},{"code":"C19","s1":"","e1":"","s2":"20:00","e2":"02:30","pausa":""},{"code":"R1","s1":"","e1":"","s2":"16:00","e2":"00:30","pausa":"19:00/19:30"},{"code":"R2","s1":"","e1":"","s2":"18:00","e2":"00:00","pausa":""},{"code":"R3","s1":"","e1":"","s2":"18:00","e2":"01:30","pausa":""},{"code":"R4","s1":"","e1":"","s2":"19:00","e2":"01:30","pausa":""},{"code":"E1","s1":"","e1":"","s2":"20:00","e2":"02:00","pausa":""},{"code":"E2","s1":"","e1":"","s2":"19:30","e2":"00:00","pausa":""},{"code":"E3","s1":"","e1":"","s2":"20:00","e2":"00:30","pausa":""},{"code":"E4","s1":"","e1":"","s2":"20:00","e2":"01:00","pausa":""},{"code":"E5","s1":"","e1":"","s2":"20:00","e2":"00:00","pausa":""},{"code":"E6","s1":"12:00","e1":"16:00","s2":"","e2":"","pausa":""}],"cando":{"Debora":["B1","B2","B3","B4"],"Mattia A.":["B1","B2","B3","B4","C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11","C12","C13","C14","C15","C16","C17","C18","C19"],"Massimo":["B1","B2","B3","B4"],"Elisa C":["BR1","R1","R2","R3","R4"],"Fabio":["BR1","C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11","C12","C13","C14","C15","C16","C17","C18","C19"],"Gabriele":["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11","C12","C13","C14","C15","C16","C17","C18","C19"],"Mattia C":["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11","C12","C13","C14","C15","C16","C17","C18","C19"],"Marco":["C1","C2","C3","C4","C5","C6","C7","C8","C9","C10","C11","C12","C13","C14","C15","C16","C17","C18","C19"],"Thomas":["C1","C3","C4","C5","C6","C7","C8","C9","C10","C11","C12","C13","C14","C15","C16","C17","C18","C19"],"Samuele":["C1","C2","C3","C4","C5","C6","C7","C9","C10","C11","C12","C13","C14","C15","C16","C17","C18","C19","E1","E2","E3","E4","E5","E6"],"Diego":["C9","C10","C11","C12","C14","C15","C16","C17","C18","C19","E1","E2","E3","E4","E5","E6"],"Leonardo":["C9","C10","C11","C12","C14","C15","C16","C17","C18","C19","E1","E2","E3","E4","E5","E6"],"Chiara":["R1","R2","R3","R4"],"Elisa A":["E1","E2","E3","E4","E5","E6"],"Mattia P":["E1","E2","E3","E4","E5","E6"],"Marta S":["E1","E2","E3","E4","E5","E6"],"Leonardo M":["E1","E2","E3","E4","E5","E6"],"Sam":["E1","E2","E3","E4","E5","E6"],"Sabrina":["E1","E2","E3","E4","E5","E6"],"Giacomo":["E1","E2","E3","E4","E5","E6"],"Marta":["E1","E2","E3","E4","E5","E6"]},"fab":{"0_cena":{"slots":[{"id":"lg0_01","codes":["C7"]},{"id":"lg0_02","codes":["C8"]},{"id":"lg0_03","codes":["C14"]},{"id":"lg0_04","codes":["C17"]},{"id":"lg0_05","codes":["B2"]},{"id":"lg0_06","codes":["R2"]}],"roleReqs":{}},"1_cena":{"slots":[{"id":"lg1_01","codes":["C7"]},{"id":"lg1_02","codes":["C8"]},{"id":"lg1_03","codes":["C14"]},{"id":"lg1_04","codes":["C17"]},{"id":"lg1_05","codes":["B2"]},{"id":"lg1_06","codes":["R2"]}],"roleReqs":{}},"2_cena":{"slots":[{"id":"lg2_01","codes":["C7"]},{"id":"lg2_02","codes":["C8"]},{"id":"lg2_03","codes":["C14"]},{"id":"lg2_04","codes":["C17"]},{"id":"lg2_05","codes":["B2"]},{"id":"lg2_06","codes":["R2"]}],"roleReqs":{}},"3_cena":{"slots":[{"id":"lg3_01","codes":["C7"]},{"id":"lg3_02","codes":["C8"]},{"id":"lg3_03","codes":["C14"]},{"id":"lg3_04","codes":["C17"]},{"id":"lg3_05","codes":["B2"]},{"id":"lg3_06","codes":["R2"]}],"roleReqs":{}},"4_cena":{"slots":[{"id":"ve_01","codes":["C7"]},{"id":"ve_02","codes":["C10"]},{"id":"ve_03","codes":["C11"]},{"id":"ve_04","codes":["C15"]},{"id":"ve_05","codes":["C16"]},{"id":"ve_06","codes":["C18"]},{"id":"ve_07","codes":["C19"]},{"id":"ve_08","codes":["B3"]},{"id":"ve_09","codes":["B4"]},{"id":"ve_10","codes":["R3"]}],"roleReqs":{}},"5_cena":{"slots":[{"id":"sa_01","codes":["C12"]},{"id":"sa_02","codes":["C5"]},{"id":"sa_03","codes":["C10"]},{"id":"sa_04","codes":["C6"]},{"id":"sa_05","codes":["B1"]},{"id":"sa_06","codes":["B4"]},{"id":"sa_07","codes":["R1"]},{"id":"sa_08","codes":["R4"]},{"id":"sa_09","codes":["C12"]},{"id":"sa_10","codes":["C16"]},{"id":"sa_11","codes":["C19"]},{"id":"sa_12","codes":["E3"]},{"id":"sa_13","codes":["E4"]},{"id":"sa_14","codes":["E4"]},{"id":"sa_15","codes":["E5"]},{"id":"sa_16","codes":["E5"]}],"roleReqs":{}},"6_pranzo_cena":{"slots":[{"id":"do_01","codes":["C1"]},{"id":"do_02","codes":["C2"]},{"id":"do_03","codes":["C3"]},{"id":"do_04","codes":["C4"]},{"id":"do_05","codes":["C9"]},{"id":"do_06","codes":["C9"]},{"id":"do_07","codes":["BR1"]},{"id":"do_08","codes":["B1"]},{"id":"do_09","codes":["R2"]},{"id":"do_10","codes":["E6"]}],"roleReqs":{}}},"archivia":["Sara C","Alessandro","Danilo"]};
+function _riepilogoCarico(){
+  const codiciNuovi=new Set(CARICO_NOV.turni.map(t=>t.code));
+  const sala=G.allShifts.filter(x=>repOf(x)==='sala');
+  const speciali=s=>s.is_off||s.is_ferie||s.code==='MALATTIA';
+  const daArchiviare=sala.filter(x=>!speciali(x)&&!codiciNuovi.has(x.code));
+  const sostituiti=sala.filter(x=>!speciali(x)&&codiciNuovi.has(x.code));
+  const persone=Object.keys(CARICO_NOV.cando)
+    .map(n=>G.allStaff.find(p=>repOf(p)==='sala'&&p.name===n)).filter(Boolean);
+  const fuori=CARICO_NOV.archivia
+    .map(n=>G.allStaff.find(p=>repOf(p)==='sala'&&p.name===n&&p.attivo!==false)).filter(Boolean);
+  // Gli extra non compaiono nella legenda per definizione: non e' un
+  // problema che restino senza turni. Chi NON e' extra e resta senza,
+  // invece, va segnalato: non sarebbe assegnabile a niente.
+  const scoperti=G.allStaff.filter(p=>repOf(p)==='sala'&&p.attivo!==false
+    &&!CARICO_NOV.cando[p.name]&&!CARICO_NOV.archivia.includes(p.name));
+  const extra=scoperti.filter(isExtra).map(p=>p.name);
+  const senzaTurni=scoperti.filter(p=>!isExtra(p)).map(p=>p.name);
+  return{daArchiviare,sostituiti,persone,fuori,senzaTurni,extra};
+}
+async function caricaLegendaNovembre(){
+  if(REP!=='sala'){alert('Questo caricamento riguarda solo la sala. Passa al reparto Sala e riprova.');return;}
+  const r=_riepilogoCarico();
+  const testo=
+    'CARICAMENTO LEGENDA SALA DI NOVEMBRE\n\n'+
+    '\u2022 '+CARICO_NOV.turni.length+' turni nuovi inseriti, con orari, pause e ruoli tutti aperti\n'+
+    '\u2022 '+r.daArchiviare.length+' turni vecchi ARCHIVIATI (non cancellati: le settimane passate continuano a leggerli)\n'+
+    '\u2022 '+r.sostituiti.length+' sigle presenti in tutte e due le legende vengono sostituite: '+r.sostituiti.map(x=>x.code).join(', ')+'\n'+
+    '   (a queste resta il campo fasce vecchio, cosi\' lo storico fino al 1 novembre non cambia)\n'+
+    '\u2022 fabbisogno impostato per Lun-Gio, Venerd\u00ec, Sabato e Domenica con pranzo e cena\n'+
+    '\u2022 '+r.persone.length+' persone ricevono i turni che possono fare\n'+
+    '\u2022 '+r.fuori.length+' persone archiviate: '+(r.fuori.map(p=>p.name).join(', ')||'nessuna')+'\n\n'+
+    (r.extra.length?'Extra, restano senza turni ed e\' giusto cosi\':\n   '+r.extra.join(', ')+'\n\n':'')+
+    (r.senzaTurni.length?'ATTENZIONE: queste persone NON sono extra e resterebbero senza nessun turno assegnabile:\n   '+r.senzaTurni.join(', ')+'\n   (se sono extra, mettigli EXTRA come ruolo in Staff prima di procedere)\n\n':'')+
+    'La cucina non viene toccata.\n\nProcedo?';
+  if(!confirm(testo))return;
+  // 1) turni
+  const codiciNuovi=new Set(CARICO_NOV.turni.map(t=>t.code));
+  const altri=G.allShifts.filter(x=>repOf(x)!=='sala');
+  const sala=G.allShifts.filter(x=>repOf(x)==='sala');
+  const speciali=sala.filter(x=>x.is_off||x.is_ferie||x.code==='MALATTIA');
+  const vecchi=sala.filter(x=>!(x.is_off||x.is_ferie||x.code==='MALATTIA'));
+  const perCodice={};vecchi.forEach(x=>{perCodice[x.code]=x;});
+  const nuovi=CARICO_NOV.turni.map((t,i)=>{
+    const prec=perCodice[t.code];
+    return{...t,reparto:'sala',is_off:false,is_ferie:false,archiviato:false,
+           sort_order:10+i,compatibleRoles:repDef('sala').roles.slice(),
+           fasce:prec?(prec.fasce||[]):[]};// le fasce vecchie restano per lo storico
+  });
+  const archiviati=vecchi.filter(x=>!codiciNuovi.has(x.code))
+    .map((x,i)=>({...x,archiviato:true,sort_order:200+i}));
+  speciali.forEach((x,i)=>{x.sort_order=i;});
+  G.allShifts=altri.concat(speciali,nuovi,archiviati);
+  // 2) chi puo' fare cosa, e chi esce
+  G.allStaff.forEach(p=>{
+    if(repOf(p)!=='sala')return;
+    if(CARICO_NOV.cando[p.name])p.canDo=CARICO_NOV.cando[p.name].slice();
+    if(CARICO_NOV.archivia.includes(p.name))p.attivo=false;
+  });
+  // 3) fabbisogno. Va impostato DOPO applyReparto, perche' quello
+  // rilegge il fabbisogno dalla configurazione salvata e lo
+  // sovrascriverebbe con quella vecchia.
+  applyReparto('sala');
+  G.fabbisogno=JSON.parse(JSON.stringify(CARICO_NOV.fab));
+  try{
+    await dbSaveShifts();
+    await dbSaveStaff();
+    await dbSaveConfig(configKey('fabbisogno'),G.fabbisogno);
+    renderAll();
+    alert('Fatto.\n\n'+nuovi.length+' turni nuovi, '+archiviati.length+' archiviati, '+
+          r.persone.length+' persone aggiornate.\n\nControlla la Legenda e il Fabbisogno.');
+  }catch(e){
+    console.error('caricaLegendaNovembre:',e);setSyncStatus('err');
+    alert('Il salvataggio e\' fallito: '+(e.message||e)+'\n\nNiente e\' stato scritto in modo definitivo: ricarica la pagina senza salvare.');
+  }
+}
+
 function legDragStart(e,i){legDragSrc=i;}
 function legDragOver(e,i){e.preventDefault();}
 function legDrop(e,i){
