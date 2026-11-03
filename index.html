@@ -3793,6 +3793,67 @@ function giorniFerieUsati(staffId,anno){
   return g;
 }
 function ferieUsate(staffId,anno){return giorniFerieUsati(staffId,anno).size;}
+
+// Dettaglio del conteggio: quali giorni contano e da dove arrivano, e
+// quali giorni approvati NON contano, col motivo. Serve a capire al
+// volo perche' un numero non e' quello che ci si aspetta.
+function dettaglioFerieUsate(staffId,anno){
+  const a=String(anno);
+  const contati=new Map();
+  (G.weeks||[]).forEach(wk=>{
+    if(!wk.startDate)return;
+    const base=new Date(wk.startDate+'T12:00:00');
+    for(let di=0;di<7;di++){
+      const giorno=(wk.shift_assign||{})[di]||{};
+      if(![giorno[staffId],giorno[staffId+'_P'],giorno[staffId+'_C']].some(v=>v==='FERIE'))continue;
+      const d=new Date(base);d.setDate(d.getDate()+di);
+      const str=dateToStr(d);
+      if(str.slice(0,4)===a)contati.set(str,'FERIE scritta nella griglia \u2014 '+(wk.name||'settimana senza nome'));
+    }
+  });
+  const esclusi=[];
+  (G.ferieRichieste||[]).forEach(r=>{
+    if(r.staff_id!==staffId)return;
+    (r.giorni_approvati||[]).forEach(d=>{
+      if(!d||String(d).slice(0,4)!==a||contati.has(d))return;
+      const celle=celleDelGiorno(staffId,d);
+      if(celle===undefined){contati.set(d,'richiesta approvata \u2014 nessuna settimana copre questa data');return;}
+      if(!celle.length){contati.set(d,'richiesta approvata \u2014 casella ancora vuota');return;}
+      if(celle.includes('FERIE')){contati.set(d,'richiesta approvata');return;}
+      esclusi.push({data:d,motivo:'nella griglia c\'\u00e8 '+celle.join(' + ')});
+    });
+  });
+  const ord=(x,y)=>x.data.localeCompare(y.data);
+  return{contati:[...contati.entries()].map(([data,origine])=>({data,origine})).sort(ord),
+         esclusi:esclusi.sort(ord)};
+}
+function dataLunga(d){
+  return new Date(d+'T12:00:00').toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+}
+function mostraDettaglioFerie(staffId,anno){
+  const p=G.allStaff.find(x=>x.id===staffId);if(!p)return;
+  const d=dettaglioFerieUsate(staffId,anno);
+  document.getElementById('dett-ferie-popup')?.remove();
+  const el=document.createElement('div');
+  el.id='dett-ferie-popup';
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:700;display:flex;align-items:center;justify-content:center;';
+  el.onclick=e=>{if(e.target===el)el.remove();};
+  el.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.3rem 1.5rem;width:520px;max-width:95vw;max-height:85vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:2px;">${p.name} &mdash; giorni di ferie contati nel ${anno}</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">${d.contati.length} giornat${d.contati.length===1?'a':'e'}</p>
+    ${d.contati.length?d.contati.map(x=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 9px;border-radius:var(--radius);background:var(--bg3);margin-bottom:4px;">
+        <span style="font-size:12px;font-weight:500;text-transform:capitalize;">${dataLunga(x.data)}</span>
+        <span style="font-size:11px;color:var(--text2);text-align:right;">${x.origine}</span>
+      </div>`).join(''):'<p style="font-size:12px;color:var(--text3);">Nessun giorno contato.</p>'}
+    ${d.esclusi.length?`<p style="font-size:12px;font-weight:500;color:var(--text2);margin:14px 0 6px;">Approvati ma NON contati</p>`+
+      d.esclusi.map(x=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 9px;border-radius:var(--radius);background:var(--yellow-bg);margin-bottom:4px;">
+        <span style="font-size:12px;font-weight:500;text-transform:capitalize;">${dataLunga(x.data)}</span>
+        <span style="font-size:11px;color:var(--yellow-text);text-align:right;">${x.motivo}</span>
+      </div>`).join(''):''}
+    <div style="text-align:right;margin-top:14px;"><button class="btn" onclick="document.getElementById('dett-ferie-popup').remove()">Chiudi</button></div>
+  </div>`;
+  document.body.appendChild(el);
+}
 // Residuo portato dall'anno prima. Puo' venire negativo: se l'anno
 // scorso ha sforato, il debito si trascina.
 function ferieResiduo(p,anno,prof){
@@ -3833,7 +3894,7 @@ function buildFerieMonteHtml(){
     +`<th style="padding:5px 8px;">Monte ${anno}</th>`
     +`<th style="padding:5px 8px;">Residuo ${anno-1}</th>`
     +'<th style="padding:5px 8px;">Disponibili</th>'
-    +'<th style="padding:5px 8px;">Usate</th>'
+    +'<th style="padding:5px 8px;">Usate <span style="font-weight:400;color:var(--text3);">(clicca)</span></th>'
     +'<th style="padding:5px 8px;">Restanti</th></tr></thead><tbody>';
   let senzaMonte=0;
   persone.forEach(p=>{
@@ -3850,7 +3911,9 @@ function buildFerieMonteHtml(){
           style="width:60px;padding:3px 4px;border-radius:var(--radius);border:0.5px solid ${m===null?'var(--border2)':'var(--blue-border)'};background:${m===null?'#fff':'var(--blue-bg)'};font-size:12px;text-align:center;font-family:inherit;"></td>
       <td style="padding:4px 8px;text-align:center;font-size:12px;color:var(--text2);font-variant-numeric:tabular-nums;">${res?num(res):'—'}</td>
       <td style="padding:4px 8px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums;">${num(disp)}</td>
-      <td style="padding:4px 8px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums;">${usate||'—'}</td>
+      <td style="padding:4px 8px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums;">
+        <span onclick="mostraDettaglioFerie('${p.id}',${anno})" title="Vedi quali giorni sta contando"
+          style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px;">${usate||'—'}</span></td>
       <td style="padding:4px 8px;text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:${col};">${num(rest)}</td>
     </tr>`;
   });
