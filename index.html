@@ -251,21 +251,60 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const DAY_NAMES=['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
 // ===== REPARTI =====
 // Fasce e postazioni non sono piu' globali: ogni reparto ha le proprie.
-// ATTENZIONE: gli id delle fasce devono essere 0,1,2... nell'ordine
-// dell'array, perche' altrove si indicizza ALL_FASCE per id.
+// Le fasce si cercano SEMPRE per id. Un id non va MAI riusato per una
+// fascia con orario diverso: role_assign salva le chiavi come
+// giorno_fascia_persona, quindi riciclare un id sposterebbe i ruoli
+// dello storico sulla fascia sbagliata.
+const FASCE_NUOVE_DA='2026-11-02';// settimane che iniziano prima: fasce vecchie, intoccate
 const REPARTI={
   sala:{
     id:'sala',
     label:'Sala & Bar',
     roles:['DEHOOR','PASS BEV FUORI','RECEPTION','BAR FUORI','PASS FOOD','GROTTA','BAR DENTRO','PASS BEV DENTRO','SPOSE','G.ALTA SX','G.ALTA DX'],
+    // Fasce in uso dal 1 novembre 2026. Cambiano per giorno della
+    // settimana (vedi fasceGiorni). Quando due giorni hanno la stessa
+    // fascia d'orario condividono lo stesso id: la chiave di
+    // role_assign contiene anche il giorno, quindi non si pestano.
     fasce:[
-      {id:0,label:'MATTINA',orario:'10:30/12:00',tipo:'pranzo'},
-      {id:1,label:'PRANZO',orario:'12:00/15:30',tipo:'pranzo'},
-      {id:2,label:'DOPO PRANZO',orario:'15:30/16:30',tipo:'pranzo'},
-      {id:3,label:'APERITIVO',orario:'16:30/19:00',tipo:'cena'},
-      {id:4,label:'CENA',orario:'19:00/00:30',tipo:'cena'},
-      {id:5,label:'DOPO CENA',orario:'00:30/C',tipo:'cena'},
-    ]
+      // --- pranzo e pomeriggio: solo nei giorni con doppia apertura ---
+      {id:20,label:'MATTINA',    orario:'11:00/12:00',tipo:'pranzo'},
+      {id:21,label:'PRANZO',     orario:'12:00/15:00',tipo:'pranzo'},
+      {id:22,label:'DOPO PRANZO',orario:'15:00/16:00',tipo:'pranzo'},
+      {id:23,label:'POMERIGGIO', orario:'16:00/17:00',tipo:'pranzo'},// sabato: tagliata, la sera parte alle 17
+      {id:24,label:'POMERIGGIO', orario:'16:00/18:00',tipo:'pranzo'},
+      // --- sera ---
+      {id:25,label:'APERITIVO',  orario:'17:00/19:00',tipo:'cena'},// sabato
+      {id:26,label:'APERITIVO',  orario:'18:00/19:00',tipo:'cena'},// venerdi
+      {id:27,label:'APERICENA',  orario:'18:00/20:00',tipo:'cena'},// lun-gio, domenica
+      {id:28,label:'PRE CENA',   orario:'19:00/20:00',tipo:'cena'},// venerdi, sabato
+      {id:29,label:'CENA',       orario:'20:00/23:00',tipo:'cena'},// lun-gio
+      {id:30,label:'CENA',       orario:'20:00/00:00',tipo:'cena'},// venerdi, sabato, domenica
+      {id:31,label:'DOPO CENA',  orario:'23:00/00:30',tipo:'cena'},// lun-gio
+      {id:32,label:'DOPO CENA',  orario:'00:00/01:00',tipo:'cena'},// venerdi, sabato
+      {id:33,label:'CHIUSURA',   orario:'01:00/02:00',tipo:'cena'},// venerdi, sabato
+    ],
+    // Quali fasce in quale giornata. Le liste sono in ordine di orario
+    // e devono restare contigue: sono le colonne del giornaliero.
+    fasceGiorni:{
+      'lun-gio': {cena:[27,29,31],       pranzo_cena:[20,21,22,24,27,29,31]},
+      'venerdi': {cena:[26,28,30,32,33], pranzo_cena:[20,21,22,24,26,28,30,32,33]},
+      'sabato':  {cena:[25,28,30,32,33], pranzo_cena:[20,21,22,23,25,28,30,32,33]},
+      // Domenica di sola cena: la titolare usa le fasce del lun-gio.
+      'domenica':{cena:[27,29,31],       pranzo_cena:[20,21,22,24,27,30]},
+    },
+    // Fasce fino al 31 ottobre 2026. Restano definite solo per
+    // rileggere lo storico: quelle settimane non vanno modificate.
+    // Per loro la copertura resta quella spuntata a mano nel turno
+    // (campo "fasce"), non si ricalcola dagli orari.
+    fasceLegacy:[
+      {id:0,label:'MATTINA',orario:'10:30/12:00',tipo:'pranzo',legacy:true},
+      {id:1,label:'PRANZO',orario:'12:00/15:30',tipo:'pranzo',legacy:true},
+      {id:2,label:'DOPO PRANZO',orario:'15:30/16:30',tipo:'pranzo',legacy:true},
+      {id:3,label:'APERITIVO',orario:'16:30/19:00',tipo:'cena',legacy:true},
+      {id:4,label:'CENA',orario:'19:00/00:30',tipo:'cena',legacy:true},
+      {id:5,label:'DOPO CENA',orario:'00:30/C',tipo:'cena',legacy:true},
+    ],
+    fasceLegacyGiorni:{cena:[3,4,5],pranzo_cena:[0,1,2,3,4,5]},
   },
   cucina:{
     id:'cucina',
@@ -297,13 +336,74 @@ const REPARTI={
 const REP_DEFAULT='sala';
 let REP=REP_DEFAULT;
 let ROLES=REPARTI[REP_DEFAULT].roles;
-let ALL_FASCE=REPARTI[REP_DEFAULT].fasce;
-let IDX_CENA=[3,4,5];let IDX_PC=[0,1,2,3,4,5];
+let ALL_FASCE=REPARTI[REP_DEFAULT].fasce;// fasce in uso oggi
+// Catalogo completo (in uso + storiche): serve solo per risalire da un
+// id a una fascia, anche quando l'id viene da una settimana vecchia.
+let FASCE_TUTTE=ALL_FASCE.concat(REPARTI[REP_DEFAULT].fasceLegacy||[]);
 function repDef(r){return REPARTI[r||REP]||REPARTI[REP_DEFAULT];}
 // Le fasce si cercano SEMPRE per id, mai per posizione nell'array.
 // Cosi' aggiungere o togliere una fascia non rinumera le altre e non
 // richiede di rimappare i turni gia' salvati nel database.
-function fascia(id){return ALL_FASCE.find(f=>f.id===id)||null;}
+function fascia(id){
+  if(SNAP){
+    const r=(SNAP.reparti||{})[REP];
+    if(r){const f=(r.fasce||[]).find(x=>x.id===id);if(f)return f;}
+  }
+  return FASCE_TUTTE.find(f=>f.id===id)||null;
+}
+
+// La giornata di lavoro non comincia a mezzanotte: un turno che chiude
+// alle 02:00 appartiene alla sera prima. Per confrontare gli orari si
+// contano i minuti dalle 06:00, cosi' le 02:00 cadono DOPO le 23:00 e
+// i confronti funzionano senza casi particolari.
+function minuti(hhmm){
+  const m=/^(\d{1,2}):(\d{2})$/.exec(String(hhmm||'').trim());if(!m)return null;
+  return((+m[1]*60+ +m[2])-360+1440)%1440;
+}
+// Da 'HH:MM/HH:MM' a [inizio,fine] in minuti. Le fasce storiche non si
+// calcolano (una finisce a 'C' = chiusura): per loro vale il dato salvato.
+function rangeFascia(f){
+  if(!f||f.legacy||!f.orario)return null;
+  const p=String(f.orario).split('/');if(p.length!==2)return null;
+  const a=minuti(p[0]),b=minuti(p[1]);
+  if(a===null||b===null)return null;
+  return[a,b<=a?b+1440:b];
+}
+// Blocchi orari di un turno: [[inizio,fine],...] in minuti.
+function blocchiTurno(sh){
+  if(!sh)return[];
+  const out=[];
+  [[sh.s1,sh.e1],[sh.s2,sh.e2]].forEach(([s,e])=>{
+    if(!s||!e)return;
+    const a=minuti(s),b=minuti(e);
+    if(a===null||b===null)return;
+    out.push([a,b<=a?b+1440:b]);
+  });
+  return out;
+}
+const GIORNO_KEY=['lun-gio','lun-gio','lun-gio','lun-gio','venerdi','sabato','domenica'];
+// Quali fasce vanno mostrate per un giorno di una certa settimana.
+// Le settimane iniziate prima del cambio tengono le fasce vecchie.
+function fasceIdsDelGiorno(wk,di){
+  // Settimana chiusa: le colonne sono quelle congelate, non si ricalcolano
+  if(SNAP){
+    const r=(SNAP.reparti||{})[REP];
+    if(r&&r.giorni&&r.giorni[di])return r.giorni[di].slice();
+  }
+  const def=repDef();
+  const tipo=(wk&&wk.day_config?wk.day_config[di]:null)||'cena';
+  if(tipo==='chiuso')return[];
+  const k=tipo==='pranzo_cena'?'pranzo_cena':'cena';
+  if(!def.fasceGiorni){
+    // Reparti senza fasce per giorno (cucina): le fasce 'pranzo'
+    // spariscono nei giorni di sola cena, come prima.
+    return def.fasce.filter(f=>k==='pranzo_cena'||f.tipo==='cena').map(f=>f.id);
+  }
+  if(wk&&wk.startDate&&wk.startDate<FASCE_NUOVE_DA)
+    return(def.fasceLegacyGiorni||{})[k]||[];
+  return(def.fasceGiorni[GIORNO_KEY[di]||'lun-gio']||{})[k]||[];
+}
+function fasceDelGiorno(wk,di){return fasceIdsDelGiorno(wk,di).map(id=>fascia(id)).filter(Boolean);}
 // doppio = ha entrambi i blocchi orari; mattina = solo il primo;
 // sera = solo il secondo. OFF e FERIE non hanno orari: null.
 function shiftShape(sh){
@@ -349,8 +449,12 @@ function shiftColorStyle(code){
     const forma=shiftShape(sh);
     if(forma&&byShape[forma])return'background:'+byShape[forma]+';color:'+txt+';';
   }
+  // BR va controllato prima di B, altrimenti prende il blu di B.
+  if(u.startsWith('BR'))return'background:#6b7280;color:'+txt+';';
   const l=u[0];
   if(l==='B')return'background:#1a56db;color:'+txt+';';
+  if(l==='C')return'background:#e65100;color:'+txt+';';
+  if(l==='R')return'background:#c026d3;color:'+txt+';';
   if(l==='D')return'background:#e65100;color:'+txt+';';
   if(l==='M')return'background:#6b7280;color:'+txt+';';
   if(l==='A')return'background:#c026d3;color:'+txt+';';
@@ -429,7 +533,7 @@ let G={
   richieste:[],
   ferieFinestre:[],
   ferieRichieste:[],
-  staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[]};
+  staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[],snapshots:{}};
 let role='';let currentManager=null;let currentDipendente=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
 
 // applyReparto ricalcola tutte le viste derivate dal reparto attivo.
@@ -441,8 +545,7 @@ function applyReparto(r){
   const def=repDef();
   ROLES=def.roles;
   ALL_FASCE=def.fasce;
-  IDX_PC=def.fasce.map(f=>f.id);
-  IDX_CENA=def.fasce.filter(f=>f.tipo==='cena').map(f=>f.id);
+  FASCE_TUTTE=def.fasce.concat(def.fasceLegacy||[]);
   G.staff=G.allStaff.filter(s=>repOf(s)===REP&&s.attivo!==false);
   G.shifts=G.allShifts.filter(s=>repOf(s)===REP);
   if(!G.shifts.length&&REP==='cucina'){
@@ -474,15 +577,15 @@ async function dbLoad(){
       if(r.key==='currentWeekId')G.currentWeekId=r.value;
     });}
     const {data:staff}=await sb.from('staff').select('*');
-    G.allStaff=(staff||[]).map(s=>({...s,reparto:s.reparto||REP_DEFAULT,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:s.sort_order??999,attivo:s.attivo!==false})).sort((a,b)=>a.sort_order-b.sort_order);
+    G.allStaff=(staff||[]).map(s=>({...s,reparto:s.reparto||REP_DEFAULT,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},ferieMonte:s.ferieMonte||{},sort_order:s.sort_order??999,attivo:s.attivo!==false})).sort((a,b)=>a.sort_order-b.sort_order);
     const {data:shifts}=await sb.from('shifts').select('*');
     let seedShifts=false;
-    if(shifts&&shifts.length>0){G.allShifts=shifts.map(s=>({...s,reparto:s.reparto||REP_DEFAULT,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[],sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);}
+    if(shifts&&shifts.length>0){G.allShifts=shifts.map(s=>({...s,reparto:s.reparto||REP_DEFAULT,pausa:s.pausa||'',archiviato:s.archiviato===true,fasce:s.fasce||[],compatibleRoles:s.compatibleRoles||[],sort_order:s.sort_order??999})).sort((a,b)=>a.sort_order-b.sort_order);}
     else{G.allShifts=JSON.parse(JSON.stringify(DEF_SHIFTS)).map(s=>({...s,reparto:REP_DEFAULT}));seedShifts=true;}
     applyReparto();
     if(seedShifts)await dbSaveShifts();
     const {data:weeks}=await sb.from('weeks').select('*');
-    G.weeks=(weeks||[]).map(w=>({...w,published_rep:(w.published_rep&&typeof w.published_rep==='object')?w.published_rep:{},day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||'',draft_assign:w.draft_assign||null,draft_role_assign:w.draft_role_assign||null,last_saved:w.last_saved||null}));
+    G.weeks=(weeks||[]).map(w=>({...w,published_rep:(w.published_rep&&typeof w.published_rep==='object')?w.published_rep:{},day_config:w.day_config||['cena','cena','cena','cena','cena','cena','cena'],shift_assign:w.shift_assign||{},role_assign:w.role_assign||{},selected_day:w.selected_day||0,startDate:w.startDate||'',chiusa_il:w.chiusa_il||null,draft_assign:w.draft_assign||null,draft_role_assign:w.draft_role_assign||null,last_saved:w.last_saved||null}));
     console.log('Loaded weeks from Supabase:', G.weeks.map(w=>({name:w.name,last_saved:w.last_saved,days:Object.keys(w.shift_assign).length})));
     if(!G.weeks.length){const w=emptyWeek('Prima settimana');G.weeks=[w];await sb.from('weeks').insert(weekToDb(w));}
     if(!G.currentWeekId||!G.weeks.find(w=>w.id===G.currentWeekId)){G.currentWeekId=G.weeks[0].id;await sb.from('config').upsert({key:'currentWeekId',value:G.currentWeekId});}
@@ -595,6 +698,7 @@ function weekToDb(w){
     role_assign:w.role_assign||{},
     selected_day:w.selected_day||0,
     startDate:w.startDate||'',
+    chiusa_il:w.chiusa_il||null,
     last_saved:new Date().toISOString(),
     last_saved_by:currentManager?currentManager.name:''
   };
@@ -713,7 +817,7 @@ async function dbSaveShifts(){
 async function dbSaveStaff(){
   try{
     // NEVER delete staff — use attivo:false to preserve history
-    const rows=G.staff.map((s,i)=>({id:s.id,name:s.name,role:s.role,reparto:REP,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},sort_order:i,attivo:true}));
+    const rows=G.staff.map((s,i)=>({id:s.id,name:s.name,role:s.role,reparto:REP,canDo:s.canDo||[],offRequests:s.offRequests||[],workDaysPerWeek:s.workDaysPerWeek||5,accessCode:s.accessCode||'',preferredRoles:s.preferredRoles||{},secondaryRoles:s.secondaryRoles||{},ferieMonte:s.ferieMonte||{},sort_order:i,attivo:true}));
     if(rows.length)await sb.from('staff').upsert(rows,{onConflict:'id'});
     setSyncStatus('ok');
   }catch(e){console.error('dbSaveStaff error:',e);setSyncStatus('err');}
@@ -723,9 +827,198 @@ async function dbSaveConfig(k,v){try{const val=typeof v==='string'?v:JSON.string
 function setSyncStatus(s){syncStatus=s;const el=document.getElementById('sync-status');if(el){el.textContent=s==='ok'?'● Sincronizzato':'● Errore';el.className='sync-status '+(s==='ok'?'ok':'err');}}
 function emptyWeek(name){return{id:'w'+Date.now()+Math.random().toString(36).slice(2,6),name:name||'Nuova settimana',published:false,published_rep:{},day_config:['cena','cena','cena','cena','cena','cena','cena'],shift_assign:{},role_assign:{},selected_day:0};}
 function curWeek(){return G.weeks.find(w=>w.id===G.currentWeekId)||G.weeks[0];}
-function getShift(code){return G.shifts.find(s=>s.code===code)||null;}
+// ===== SETTIMANE CHIUSE =====
+// Una settimana finita si puo' CHIUDERE: accanto a lei si salva una
+// copia di tutto cio' che serve a ridisegnarla (turni con orari e
+// fasce, nomi delle persone, fasce e postazioni del reparto, quali
+// fasce comparivano in ogni giorno). Da quel momento si disegna da
+// quella copia e non piu' dalla legenda viva: cancellare un turno o
+// una persona non la tocca piu'.
+const GIORNI_RIAPERTURA=7;// entro quanti giorni dalla chiusura si puo' riaprire
+let SNAP=null;// istantanea in uso MENTRE si disegna una settimana chiusa
+
+function settimanaChiusa(wk){return !!(wk&&wk.chiusa_il);}
+// Dentro una settimana chiusa valgono i nomi e le postazioni congelati:
+// cosi' chi e' stato tolto dallo staff resta visibile dov'era.
+function personePerVista(){
+  if(SNAP)return(SNAP.persone||[]).filter(p=>(p.reparto||REP_DEFAULT)===REP);
+  return G.allStaff.filter(s=>repOf(s)===REP);
+}
+function staffPerVista(){return SNAP?personePerVista():G.staff;}
+function ruoliPerVista(){
+  if(SNAP){const r=(SNAP.reparti||{})[REP];if(r&&r.roles)return r.roles;}
+  return ROLES;
+}
+// Guardia da mettere all'inizio di ogni modifica: una settimana
+// chiusa non si tocca, nemmeno per sbaglio da un vecchio bottone.
+function vietatoSeChiusa(wk,cosa){
+  if(!settimanaChiusa(wk))return false;
+  alert('"'+wk.name+'" e\' chiusa: '+(cosa||'non si puo\' modificare')+'.\n\nSe serve davvero, riaprila dalla fascetta in cima (entro '+GIORNI_RIAPERTURA+' giorni dalla chiusura).');
+  return true;
+}
+function settimanaFinita(wk){
+  if(!wk||!wk.startDate)return false;
+  const fine=new Date(wk.startDate+'T12:00:00');fine.setDate(fine.getDate()+6);
+  const oggi=new Date();oggi.setHours(0,0,0,0);
+  return fine<oggi;
+}
+function riaperturaPossibile(wk){
+  if(!settimanaChiusa(wk))return false;
+  const g=(Date.now()-new Date(wk.chiusa_il).getTime())/86400000;
+  return g<=GIORNI_RIAPERTURA;
+}
+// Esegue fn disegnando con l'istantanea della settimana, se chiusa.
+// Ripristina sempre il valore di prima: cosi' due settimane disegnate
+// una dentro l'altra (confronto, anteprima) non si sporcano.
+function conIstantanea(wk,fn){
+  const prec=SNAP;
+  SNAP=settimanaChiusa(wk)?(G.snapshots[wk.id]||null):null;
+  try{return fn();}finally{SNAP=prec;}
+}
+// Raccoglie tutti i codici turno e le persone che compaiono nella settimana
+function contenutoSettimana(wk){
+  const codici=new Set(),persone=new Set();
+  Object.values(wk.shift_assign||{}).forEach(g=>{
+    Object.entries(g||{}).forEach(([k,v])=>{
+      if(v)codici.add(v);
+      persone.add(String(k).replace(/_[PC]$/,''));
+    });
+  });
+  Object.keys(wk.role_assign||{}).forEach(k=>{
+    const p=String(k).split('_');if(p.length>=3)persone.add(p.slice(2).join('_'));
+  });
+  return{codici,persone};
+}
+function costruisciIstantanea(wk){
+  const{codici,persone}=contenutoSettimana(wk);
+  const turni=G.allShifts.filter(s=>codici.has(s.code))
+    .map(s=>({code:s.code,s1:s.s1||'',e1:s.e1||'',s2:s.s2||'',e2:s.e2||'',
+              pausa:s.pausa||'',fasce:s.fasce||[],color:s.color||null,
+              is_off:!!s.is_off,is_ferie:!!s.is_ferie,reparto:repOf(s)}));
+  // Tutte le persone che c'erano, non solo quelle con un turno:
+  // le righe vuote fanno parte di com'era la settimana.
+  const gente=G.allStaff.filter(p=>persone.has(p.id)||p.attivo!==false)
+    .map(p=>({id:p.id,name:p.name,role:p.role||'',reparto:repOf(p),
+              workDaysPerWeek:p.workDaysPerWeek||5,
+              offRequests:(p.offRequests||[]).slice()}));
+  const reparti={};
+  Object.keys(REPARTI).forEach(r=>{
+    const prec=REP;REP=r;
+    const giorni={};
+    for(let di=0;di<7;di++)giorni[di]=fasceIdsDelGiorno(wk,di);
+    const usate=new Set();Object.values(giorni).forEach(a=>a.forEach(i=>usate.add(i)));
+    reparti[r]={
+      roles:repDef(r).roles.slice(),
+      giorni,
+      fasce:[...usate].map(i=>fascia(i)).filter(Boolean).map(f=>({...f}))
+    };
+    REP=prec;
+  });
+  return{creato:new Date().toISOString(),versione:1,turni,persone:gente,reparti,
+         day_config:(wk.day_config||[]).slice()};
+}
+async function chiudiSettimana(id){
+  const wk=G.weeks.find(w=>w.id===id);if(!wk)return;
+  if(!wk.startDate){alert('Questa settimana non ha una data di inizio: senza data non si sa quando e\' finita. Mettila prima di chiuderla.');return;}
+  if(!confirm(`Chiudere "${wk.name}"?\n\nDa quel momento non si potra\' piu\' modificare e restera\' esattamente com'e\' adesso, anche se in futuro cancelli turni o persone.\n\nSi puo\' riaprire entro ${GIORNI_RIAPERTURA} giorni con la password manager.`))return;
+  const dati=costruisciIstantanea(wk);
+  const quando=new Date().toISOString();
+  try{
+    await sb.from('week_snapshots').upsert({week_id:wk.id,creato:quando,dati},{onConflict:'week_id'});
+    await sb.from('weeks').update({chiusa_il:quando}).eq('id',wk.id);
+    wk.chiusa_il=quando;G.snapshots[wk.id]=dati;
+    setSyncStatus('ok');renderAll();
+    alert('Settimana chiusa. Da ora e\' in sola visualizzazione.');
+  }catch(e){
+    console.error('chiudiSettimana:',e);setSyncStatus('err');
+    const m=String(e.message||e);
+    alert(/week_snapshots|does not exist|schema cache/i.test(m)
+      ? 'Manca la tabella week_snapshots sul database: va creata prima di poter chiudere le settimane.'
+      : 'Non sono riuscito a chiuderla: '+m);
+  }
+}
+async function riapriSettimana(id){
+  const wk=G.weeks.find(w=>w.id===id);if(!wk)return;
+  if(!riaperturaPossibile(wk)){alert(`Sono passati piu\' di ${GIORNI_RIAPERTURA} giorni dalla chiusura: questa settimana non si riapre piu\'.`);return;}
+  const atteso=(currentManager&&currentManager.password)||G.managerPwd;
+  const p=prompt('Password manager per riaprire "'+wk.name+'":');
+  if(p===null)return;
+  if(p!==atteso){alert('Password errata.');return;}
+  try{
+    await sb.from('weeks').update({chiusa_il:null}).eq('id',wk.id);
+    wk.chiusa_il=null;
+    setSyncStatus('ok');renderAll();
+  }catch(e){console.error('riapriSettimana:',e);setSyncStatus('err');alert('Non sono riuscito a riaprirla: '+(e.message||e));}
+}
+// L'istantanea non si carica all'avvio insieme a tutto il resto:
+// sarebbero decine di settimane di dati inutili ad ogni accesso.
+// Si legge solo quando si apre davvero una settimana chiusa.
+async function assicuraIstantanea(id){
+  const wk=G.weeks.find(w=>w.id===id);
+  if(!wk||!settimanaChiusa(wk)||G.snapshots[id])return;
+  try{
+    const{data}=await sb.from('week_snapshots').select('dati').eq('week_id',id).single();
+    if(data&&data.dati)G.snapshots[id]=data.dati;
+    else console.warn('Settimana chiusa senza istantanea:',id);
+  }catch(e){console.log('istantanea non leggibile:',e.message||e);}
+}
+
+function getShift(code){
+  // Dentro una settimana chiusa vale la copia salvata, non la legenda viva
+  if(SNAP){const t=(SNAP.turni||[]).find(x=>x.code===code);if(t)return t;}
+  return G.shifts.find(s=>s.code===code)||null;
+}
+// I turni vecchi non si cancellano mai: si archiviano. Restano nel
+// database, quindi le settimane passate continuano a riconoscerli
+// (orari, fasce, ore), ma non compaiono piu' fra quelli assegnabili.
+// Cancellarli davvero farebbe sparire le persone dal giornaliero
+// storico, perche' isFuoriServizio tratta un codice sconosciuto come
+// fuori servizio.
+function turniSceglibili(extra){
+  return G.shifts.filter(s=>!s.archiviato||(extra&&s.code===extra));
+}
+function archiviaTurno(i,on){
+  const s=G.shifts[i];if(!s)return;
+  s.archiviato=!!on;
+  renderLegenda();renderLegSidebar();markDirty();
+}
 function isFuoriServizio(code){if(!code)return true;const u=code.toUpperCase();if(u==='MALATTIA')return true;const s=getShift(code);return !s||s.is_off||s.is_ferie;}
-function shiftInFascia(code,fid){if(isFuoriServizio(code))return false;const s=getShift(code);if(!s)return false;return s.fasce&&s.fasce.includes(fid);}
+// Un turno copre una fascia se i suoi orari ci si sovrappongono.
+// Non si spunta piu' a mano: lo stesso codice turno viene usato in
+// giorni con fasce diverse (C7 va sia lun-gio sia venerdi), quindi una
+// lista salvata sul turno non potrebbe essere giusta in tutti i giorni.
+// Eccezione: le fasce storiche tengono la lista salvata, per non
+// cambiare nulla sulle settimane fino al 1 novembre.
+function shiftInFascia(code,fid){
+  if(isFuoriServizio(code))return false;
+  const s=getShift(code);if(!s)return false;
+  const f=fascia(fid);if(!f)return false;
+  if(f.legacy)return!!(s.fasce&&s.fasce.includes(fid));
+  const r=rangeFascia(f);if(!r)return false;
+  return blocchiTurno(s).some(b=>b[0]<r[1]&&b[1]>r[0]);
+}
+// Regola pranzo/cena, verificata sul foglio Turni: due blocchi =>
+// copre pranzo e cena; blocco unico che finisce entro le 19:00 =>
+// solo pranzo; altrimenti => solo cena.
+function serviziTurno(x){
+  const s=(typeof x==='string')?getShift(x):x;
+  if(!s||isFuoriServizio(s.code))return{pranzo:false,cena:false};
+  const b=blocchiTurno(s);
+  if(!b.length)return{pranzo:false,cena:false};
+  if(b.length>=2)return{pranzo:true,cena:true};
+  return b[0][1]<=minuti('19:00')?{pranzo:true,cena:false}:{pranzo:false,cena:true};
+}
+// Ore pagate del turno: somma dei blocchi meno la pausa.
+// La pausa si scrive come un orario, es. '19:30/20:00'.
+function oreTurno(s){
+  if(!s)return 0;
+  let m=blocchiTurno(s).reduce((t,b)=>t+(b[1]-b[0]),0);
+  const pa=rangeFascia({orario:s.pausa});
+  if(pa)m-=(pa[1]-pa[0]);
+  return Math.max(0,m)/60;
+}
+function oreTesto(o){return o?(o%1?o.toFixed(1).replace('.',','):String(o)):'\u2014';}
+function serveTesto(s){const v=serviziTurno(s);return v.pranzo&&v.cena?'Pranzo e cena':v.pranzo?'Pranzo':v.cena?'Cena':'\u2014';}
 const isManager=()=>role==='manager'||role==='responsabile';
 const isResponsabile=()=>role==='responsabile';
 // La pubblicazione e' per reparto: sala puo' pubblicare i suoi turni
@@ -1140,7 +1433,7 @@ function colorLegendHtml(){
       `<span class="color-legend-item"><span class="color-dot" style="background:${byShape[k]};"></span>${lbl[k]||k}</span>`).join('')
       +'<span class="color-legend-item"><span class="color-dot" style="background:#111;"></span>OFF/FERIE</span>';
   }
-  const work=G.shifts.filter(s=>{const u=(s.code||'').toUpperCase();return u!=='OFF'&&u!=='FERIE'&&u!=='MALATTIA'&&!s.is_off&&!s.is_ferie;});
+  const work=turniSceglibili().filter(s=>{const u=(s.code||'').toUpperCase();return u!=='OFF'&&u!=='FERIE'&&u!=='MALATTIA'&&!s.is_off&&!s.is_ferie;});
   const seen=[];
   work.forEach(s=>{
     const style=shiftColorStyle(s.code);
@@ -1176,7 +1469,7 @@ async function switchReparto(r){
 }
 
 function renderLegSidebar(filter){
-  const workShifts=G.shifts.filter(s=>!isFuoriServizio(s.code)||false).filter(s=>{
+  const workShifts=turniSceglibili().filter(s=>!isFuoriServizio(s.code)||false).filter(s=>{
     const u=s.code.toUpperCase();return u!=='OFF'&&u!=='FERIE'&&u!=='MALATTIA'&&!s.is_off&&!s.is_ferie;
   });
   const initials=[...new Set(workShifts.map(s=>s.code[0].toUpperCase()))].sort();
@@ -1216,12 +1509,14 @@ function renderDepWeekSelector(){
   if(!visible.find(w=>w.id===G.currentWeekId))G.currentWeekId=visible[0].id;
   sel.innerHTML=visible.map(w=>`<option value="${w.id}"${w.id===G.currentWeekId?' selected':''}>${w.name}</option>`).join('');
 }
-function switchWeekDep(id){
+async function switchWeekDep(id){
   G.currentWeekId=id;
+  await assicuraIstantanea(id);
   renderTurni();renderDayNav();
 }
 async function switchWeek(id){
   G.currentWeekId=id;
+  await assicuraIstantanea(id);
   await dbSaveConfig('currentWeekId',id);
   const alertEl=document.getElementById('draft-alerts');
   if(alertEl)alertEl.innerHTML='';
@@ -1562,6 +1857,7 @@ function doUndo(){
 }
 
 async function clearWeek(){
+  if(vietatoSeChiusa(curWeek(),'non si puo\' svuotare'))return;
   const bloccate=caselleBloccate();
   const avviso=bloccate.length
     ? '\n\nLe '+bloccate.length+' caselle bloccate (ferie e turni approvati) NON verranno cancellate.'
@@ -1611,6 +1907,39 @@ function renderTurni(){
   const wrap=document.getElementById('turni-wrap');
   if(!wk){wrap.innerHTML='<p style="color:var(--text2);padding:1rem;">Nessuna settimana disponibile.</p>';return;}
   if(!isManager()){const el=document.getElementById('dep-week-label');if(el)el.textContent=wk.name;}
+  return conIstantanea(wk,()=>renderTurniCorpo(wk,wrap));
+}
+// La fascetta in cima alla settimana: chiusa, da chiudere, o niente.
+function barraChiusura(wk){
+  if(!wk)return'';
+  if(settimanaChiusa(wk)){
+    const q=new Date(wk.chiusa_il).toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'});
+    const manca=G.snapshots[wk.id]?'':' <span style="color:var(--red-text);">(copia non ancora caricata)</span>';
+    return`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius);padding:8px 12px;margin-bottom:10px;">
+      <span style="font-size:12px;font-weight:600;color:var(--text2);">&#128274; Settimana chiusa</span>
+      <span style="font-size:11px;color:var(--text3);">Sola visualizzazione dal ${q}. Resta com'era: non la cambiano n&eacute; i turni n&eacute; lo staff modificati dopo.${manca}</span>
+      ${isManager()&&riaperturaPossibile(wk)?`<button class="btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="riapriSettimana('${wk.id}')">Riapri</button>`:
+        isManager()?`<span style="font-size:11px;color:var(--text3);margin-left:auto;">Passati i ${GIORNI_RIAPERTURA} giorni per riaprirla</span>`:''}
+    </div>`;
+  }
+  if(!isManager()||!settimanaFinita(wk))return'';
+  return`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:var(--radius);padding:8px 12px;margin-bottom:10px;">
+    <span style="font-size:12px;font-weight:600;color:var(--yellow-text);">&#9888; Settimana finita</span>
+    <span style="font-size:11px;color:var(--yellow-text);">Chiudila per congelarla com'&egrave;: dopo non la toccher&agrave; pi&ugrave; nessuna modifica a turni o staff.</span>
+    <button class="btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="chiudiSettimana('${wk.id}')">Chiudi settimana</button>
+  </div>`;
+}
+// Settimane senza data: non si sa quando finiscono, quindi non si chiudono
+function settimaneSenzaData(){return(G.weeks||[]).filter(w=>!w.startDate);}
+function avvisoSenzaData(){
+  if(!isManager())return'';
+  const sd=settimaneSenzaData();
+  if(!sd.length)return'';
+  return`<div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius);padding:8px 12px;margin-bottom:10px;">
+    <span style="font-size:11px;color:var(--text2);">${sd.length} settiman${sd.length===1?'a':'e'} senza data di inizio, quindi non si posson chiudere: <b>${sd.map(w=>w.name).join(', ')}</b>. Mettigli la data da Settimane.</span>
+  </div>`;
+}
+function renderTurniCorpo(wk,wrap){
   const days=DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:wk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
   const weekDates=getWeekDates(wk);
   // Build columns
@@ -1650,7 +1979,8 @@ function renderTurni(){
   });
   h+='</tr></thead><tbody>';
   // Use allStaff (includes inactive) to show historical shifts correctly
-  const staffPerTurni=G.allStaff.filter(s=>repOf(s)===REP);
+  const chiusa=settimanaChiusa(wk);
+  const staffPerTurni=personePerVista();
   staffPerTurni.forEach(p=>{
     // Check if this person has any shift in this week — if inactive and no shifts, skip
     const hasShift=!cols.every(c=>!getShiftCode(wk,c.idx,p.id,c.servizio));
@@ -1667,7 +1997,7 @@ function renderTurni(){
         // Green for extra availability
         const wkDates=getWeekDates(wk);
         const dStr=wkDates?dateToStr(wkDates[c.idx]):null;
-        const fIds=c.servizio==='pranzo'?ALL_FASCE.filter(f=>f.tipo==='pranzo').map(f=>f.id):c.servizio==='cena'?ALL_FASCE.filter(f=>f.tipo==='cena').map(f=>f.id):ALL_FASCE.map(f=>f.id);
+        const fIds=fasceDelGiorno(wk,c.idx).filter(f=>!c.servizio||f.tipo===c.servizio).map(f=>f.id);
         const disp=dStr&&extra?G.disponibilita[p.id+'_'+dStr]:null;
         const isAvail=!val&&disp&&(!disp.fasce||!disp.fasce.length||fIds.some(fid=>disp.fasce.includes(fid)));
         // Check for pending richiesta turno
@@ -1678,10 +2008,11 @@ function renderTurni(){
           :richPending?'outline:2px solid #f5d76e;outline-offset:-2px;':'';
         const cellTitle=bloc?bloc.testo+' — bloccata':isAvail?'Disponibile':richPending?'Richiesta: '+richPending.turno_richiesto:hasOffReq?'Richiesta giorno libero':'';
         h+=`<td class="shift-cell" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}">
+          ${chiusa?`<span style="display:inline-block;width:66px;font-size:11px;padding:2px 3px;color:${val?shiftTextColor(val):'var(--text)'};font-weight:${val?'600':'400'};">${val||''}</span>`:`
           <select onchange="setShift(${sKey},this.value)" style="width:66px;font-size:11px;padding:2px 3px;border:none;background:transparent;color:${val?shiftTextColor(val):'var(--text)'};font-family:inherit;font-weight:${val?'600':'400'};">
             <option value="" style="background:#fff;color:#1a1a1a;"></option>
-            ${G.shifts.map(sh=>`<option value="${sh.code}" style="background:#fff;color:#1a1a1a;"${sh.code===val?' selected':''}>${sh.code}</option>`).join('')}
-          </select>${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
+            ${turniSceglibili(val).map(sh=>`<option value="${sh.code}" style="background:#fff;color:#1a1a1a;"${sh.code===val?' selected':''}>${sh.code}</option>`).join('')}
+          </select>`}${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
       } else {
         h+=`<td class="shift-cell-ro" style="${cs}">${val}</td>`;
       }
@@ -1699,7 +2030,7 @@ function renderTurni(){
       groups.forEach(g=>{
         h+=`<tr class="count-row"><td class="scol" style="background:var(--bg3);">${g.label}</td>`;
         cols.forEach(c=>{
-          const n=G.staff.filter(p=>{
+          const n=staffPerVista().filter(p=>{
             const code=getShiftCode(wk,c.idx,p.id,c.servizio);
             return code&&!isFuoriServizio(code)&&code.toUpperCase().startsWith(g.prefix);
           }).length;
@@ -1710,14 +2041,14 @@ function renderTurni(){
     } else {
       h+='<tr class="count-row"><td class="scol" style="background:var(--bg3);">N. operatori</td>';
       cols.forEach(c=>{
-        const n=G.staff.filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);return code&&!isFuoriServizio(code);}).length;
+        const n=staffPerVista().filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);return code&&!isFuoriServizio(code);}).length;
         h+=`<td>${n||''}</td>`;
       });
       h+='</tr>';
     }
   }
   h+='</tbody></table>';
-  wrap.innerHTML=h;
+  wrap.innerHTML=barraChiusura(wk)+avvisoSenzaData()+h;
 }
 let shiftTimer=null;
 
@@ -1775,6 +2106,7 @@ function sbloccaCasella(blocco,pid){
 }
 
 function setShift(di,pid,servizio,val){
+  if(vietatoSeChiusa(curWeek(),'i turni non si cambiano piu\''))  {renderTurni();return;}
   const blocco=bloccoCasella(di,pid);
   if(blocco&&!sbloccaCasella(blocco,pid)){renderTurni();return;}
   const wk=curWeek();pushUndo(wk);
@@ -1806,11 +2138,13 @@ async function selDay(i){const wk=isManager()?curWeek():getDepWeek();if(!wk)retu
 
 function renderDayContent(){
   const wk=isManager()?curWeek():getDepWeek();if(!wk)return;
+  return conIstantanea(wk,()=>renderDayContentCorpo(wk));
+}
+function renderDayContentCorpo(wk){
   const di=wk.selected_day;const tipo=wk.day_config[di];
-  const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
-  const fasce=fasciaIdxs.map(i=>fascia(i)).filter(Boolean);
+  const fasce=fasceDelGiorno(wk,di);
   function fHead(f){const cls=f.tipo==='pranzo'?'fp':'fc';return`<th class="${cls}">${f.label}<br><span style="font-size:10px;font-weight:400;">${f.orario}</span></th>`;}
-  let h=`<p style="font-size:14px;font-weight:500;margin-bottom:.75rem;">${DAY_NAMES[di]}</p>`;
+  let h=barraChiusura(wk)+`<p style="font-size:14px;font-weight:500;margin-bottom:.75rem;">${DAY_NAMES[di]}</p>`;
   h+='<div class="wrap"><table><thead><tr><th class="scol"></th>';
   fasce.forEach(f=>{h+=fHead(f);});
   if(tipo==='pranzo_cena'){
@@ -1835,7 +2169,8 @@ function renderDayContent(){
       if(!working){h+=`<td class="xc">X</td>`;}
       else{
         const key=`${di}_${f.id}_${p.id}`;const val=(wk.role_assign[key])||'';
-        if(isManager()){h+=`<td class="rc"><select onchange="setRole('${key}',this.value)"><option value=""></option>${ROLES.map(r=>`<option value="${r}"${r===val?' selected':''}>${r}</option>`).join('')}</select></td>`;}
+        if(isManager()&&!settimanaChiusa(wk)){h+=`<td class="rc"><select onchange="setRole('${key}',this.value)"><option value=""></option>${ruoliPerVista().map(r=>`<option value="${r}"${r===val?' selected':''}>${r}</option>`).join('')}</select></td>`;}
+        else if(isManager()){h+=`<td class="rc" style="font-size:11px;color:var(--text2);padding:3px 5px;">${val||''}</td>`;}
         else{h+=`<td class="rc-ro">${val}</td>`;}
       }
     });
@@ -1860,10 +2195,10 @@ function renderDayContent(){
   h+='<div class="wrap"><table><thead><tr><th class="scol" style="min-width:130px;background:var(--bg3);"></th>';
   fasce.forEach(f=>{h+=fHead(f);});
   h+='</tr></thead><tbody>';
-  ROLES.forEach(r=>{
+  ruoliPerVista().forEach(r=>{
     h+=`<tr><td class="role-name-td">${r}</td>`;
     fasce.forEach(f=>{
-      const names=G.staff.filter(p=>{
+      const names=staffPerVista().filter(p=>{
         const key=`${di}_${f.id}_${p.id}`;
         if((wk.role_assign[key])!==r)return false;
         return personInFascia(wk,di,p.id,f,tipo);
@@ -1877,7 +2212,9 @@ function renderDayContent(){
   if(isManager())updateIncompleteAlert();
 }
 function setRole(key,val){
-  const wk=curWeek();pushUndo(wk);
+  const wk=curWeek();
+  if(vietatoSeChiusa(wk,'le postazioni non si cambiano piu\'')){renderDayContent();return;}
+  pushUndo(wk);
   wk.role_assign[key]=val;
   markDirty();
   renderDayContent();
@@ -1936,7 +2273,7 @@ function renderStaffDetail(){
   if(!selectedStaffId){panel.innerHTML='';return;}
   const p=G.staff.find(s=>s.id===selectedStaffId);if(!p){panel.innerHTML='';return;}
   const extra=isExtra(p);
-  const workShifts=G.shifts.filter(s=>!s.is_off&&!s.is_ferie);
+  const workShifts=turniSceglibili().filter(s=>!s.is_off&&!s.is_ferie);
   panel.innerHTML=`
     <div class="staff-detail">
       <h4>Modifica: ${p.name}</h4>
@@ -1960,6 +2297,14 @@ function renderStaffDetail(){
         <label style="font-size:12px;font-weight:500;color:var(--text2);">Giorni lavorativi a settimana:</label>
         <input type="number" min="1" max="7" value="${p.workDaysPerWeek||5}" onchange="setWorkDays('${p.id}',this.value)" style="width:60px;padding:5px 8px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;">
       </div>
+      ${(()=>{
+        // Promemoria del saldo ferie: si imposta in Ferie > Monte ferie
+        const a=annoOggi();
+        if(monteAnno(p,a)===null&&!ferieResiduo(p,a))return'';
+        const rest=ferieRestanti(p,a);
+        const col=rest<0?'var(--red-text)':rest===0?'var(--orange-text)':'var(--text2)';
+        return`<p style="font-size:12px;color:var(--text2);margin-bottom:10px;">Ferie ${a}: <b style="color:${col};">${rest}</b> giornat${rest===1?'a':'e'} su ${ferieDisponibili(p,a)} <span style="color:var(--text3);">(si imposta in Ferie &rsaquo; Monte ferie)</span></p>`;
+      })()}
       <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;">Turni che può fare</p>
       <div class="cb-grid">
         ${workShifts.map(s=>{const checked=(p.canDo||[]).includes(s.code);return`<label class="cb-pill ${checked?'checked':''}" style="${checked?shiftColorStyle(s.code):''}"><input type="checkbox" style="display:none;" ${checked?'checked':''} onchange="toggleCanDo('${p.id}','${s.code}',this.checked)">${s.code}</label>`;}).join('')}
@@ -1968,14 +2313,18 @@ function renderStaffDetail(){
       <div class="day-check-grid">
         ${DAY_NAMES.map((n,i)=>{const checked=(p.offRequests||[]).includes(i);return`<label class="cb-pill ${checked?'checked':''}"><input type="checkbox" ${checked?'checked':''} onchange="toggleOffReq('${p.id}',${i},this.checked)">${n}</label>`;}).join('')}
       </div>
-      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:12px;">Ruolo preferito per fascia</p>
-      <div class="pref-roles-grid">
-        ${ALL_FASCE.map(f=>{const pref=(p.preferredRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label}</label><select onchange="setPrefRole('${p.id}',${f.id},'pref',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===pref?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
-      </div>
-      <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:8px;">Ruolo secondario per fascia (se il preferito è già coperto)</p>
-      <div class="pref-roles-grid">
-        ${ALL_FASCE.map(f=>{const sec=(p.secondaryRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label}</label><select onchange="setPrefRole('${p.id}',${f.id},'sec',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===sec?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
-      </div>`}
+      <details style="margin-top:12px;">
+        <summary style="font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;">Ruoli per fascia (preferito e secondario)</summary>
+        <p style="font-size:11px;color:var(--text3);margin:8px 0;">Le fasce sono quelle in uso oggi. Alcune hanno lo stesso nome in giorni diversi: guarda l'orario.</p>
+        <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:10px;">Ruolo preferito per fascia</p>
+        <div class="pref-roles-grid">
+          ${ALL_FASCE.map(f=>{const pref=(p.preferredRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label} <span style="color:var(--text3);">${f.orario}</span></label><select onchange="setPrefRole('${p.id}',${f.id},'pref',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===pref?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
+        </div>
+        <p style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:8px;margin-top:8px;">Ruolo secondario per fascia (se il preferito è già coperto)</p>
+        <div class="pref-roles-grid">
+          ${ALL_FASCE.map(f=>{const sec=(p.secondaryRoles||{})[String(f.id)]||'';return`<div class="pref-role-item"><label>${f.label} <span style="color:var(--text3);">${f.orario}</span></label><select onchange="setPrefRole('${p.id}',${f.id},'sec',this.value)"><option value="">— nessuno —</option>${ROLES.map(r=>'<option value="'+r+'"'+(r===sec?' selected':'')+'>'+r+'</option>').join('')}</select></div>`;}).join('')}
+        </div>
+      </details>`}
     </div>`;
 }
 
@@ -2000,7 +2349,7 @@ function dragEnd(){dragSrcIdx=null;document.querySelectorAll('.staff-row').forEa
 // ===== EQUIVALENZE =====
 function renderEquivalenze(){
   const el=document.getElementById('eq-list');if(!el)return;
-  const workShifts=G.shifts.filter(s=>!s.is_off&&!s.is_ferie);
+  const workShifts=turniSceglibili().filter(s=>!s.is_off&&!s.is_ferie);
   if(!G.equivalenze.length){el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessun gruppo definito.</p>';return;}
   el.innerHTML=G.equivalenze.map((grp,gi)=>`
     <div class="eq-row">
@@ -2049,19 +2398,15 @@ function aperturaGiorno(di){
 }
 function etichettaApertura(a){return a==='pranzo_cena'?'Pranzo e cena':'Solo cena';}
 
-// Un turno copre il pranzo se ha delle fasce di tipo pranzo
-function copreIlPranzo(code){
-  const s=getShift(code);if(!s)return false;
-  const idPranzo=ALL_FASCE.filter(f=>f.tipo==='pranzo').map(f=>f.id);
-  return (s.fasce||[]).some(fid=>idPranzo.includes(fid));
-}
+// Un turno copre il pranzo: dagli orari, vedi serviziTurno
+function copreIlPranzo(code){return serviziTurno(code).pranzo;}
 
 function renderFabbisogno(){
   const el=document.getElementById('fab-grid');if(!el)return;
   const wk=curWeek();
   const tit=document.getElementById('fab-page-title');
   if(tit)tit.innerHTML='Fabbisogno turni — '+repLabel()+(wk?' <span style="font-size:11px;font-weight:400;color:var(--text2);">settimana attiva: '+wk.name+'</span>':'');
-  const turni=G.shifts.filter(s=>!s.is_off&&!s.is_ferie&&s.code!=='MALATTIA');
+  const turni=turniSceglibili().filter(s=>!s.is_off&&!s.is_ferie&&s.code!=='MALATTIA');
   let html='';
   DAY_NAMES.forEach((nome,di)=>{
     const tipo=wk?(wk.day_config||[])[di]:'cena';
@@ -2154,7 +2499,7 @@ function renderFabRuoli(){
   if(tipo==='chiuso'){corpo.innerHTML='<p style="font-size:12px;color:var(--text3);">Giorno chiuso in questa settimana.</p>';return;}
   const ap=aperturaGiorno(di);
   const fab=getFabGiorno(di,ap);
-  const fasce=(tipo==='pranzo_cena'?IDX_PC:IDX_CENA).map(i=>fascia(i)).filter(Boolean);
+  const fasce=fasceDelGiorno(wk,di);
   const ruoli=repDef().roles;
   const th=fasce.map(f=>`<th class="cb-th ${f.tipo==='pranzo'?'fp':'fc'}">${f.label}<br><span style="font-size:9px;font-weight:400;">${f.orario}</span></th>`).join('');
   const righe=ruoli.map(r=>{
@@ -2237,7 +2582,7 @@ function rimuoviSlot(di,apertura,sid){
 function cambiaCodiceSlot(di,apertura,sid,idx){
   const f=getFabGiorno(di,apertura);
   const s=f.slots.find(x=>x.id===sid);if(!s)return;
-  const turni=G.shifts.filter(x=>!x.is_off&&!x.is_ferie&&x.code!=='MALATTIA').map(x=>x.code);
+  const turni=turniSceglibili().filter(x=>!x.is_off&&!x.is_ferie&&x.code!=='MALATTIA').map(x=>x.code);
   const elenco=turni.map((t,i)=>`${i+1}. ${t}`).join('\n');
   const r=prompt('Sostituisci '+s.codes[idx]+' con quale turno?\n\n'+elenco+'\n\nNumero (o vuoto per togliere questa sigla dallo slot):');
   if(r===null)return;
@@ -2300,6 +2645,7 @@ async function saveFabbisogno(){await dbSaveConfig(configKey('fabbisogno'),G.fab
 // ===== GENERA BOZZA =====
 function generaBozza(){
   const wk=curWeek();
+  if(vietatoSeChiusa(wk,'non si puo\' rigenerare'))return;
   const errors=[];const warnings=[];
   const eligibleStaff=G.staff.filter(p=>!isExtra(p));
 
@@ -2352,17 +2698,13 @@ function generaBozza(){
 
   // Helper: get compatible shifts for a role
   function compatShiftsForRole(role){
-    return G.shifts.filter(s=>!isFuoriServizio(s.code)&&(s.compatibleRoles||[]).includes(role)).map(s=>s.code);
+    return turniSceglibili().filter(s=>!isFuoriServizio(s.code)&&(s.compatibleRoles||[]).includes(role)).map(s=>s.code);
   }
 
-  // Returns true if a shift covers at least one fascia of the given servizio
+  // Il turno serve il pranzo o la cena? Dagli orari, non dalle fasce.
   function shiftMatchesServizio(code, servizio){
     if(!servizio)return true;// no filter needed for full-day sessions
-    const s=getShift(code);if(!s||isFuoriServizio(code))return false;
-    const validFasceIds=servizio==='pranzo'
-      ? ALL_FASCE.filter(f=>f.tipo==='pranzo').map(f=>f.id)
-      : IDX_CENA;
-    return (s.fasce||[]).some(fid=>validFasceIds.includes(fid));
+    return !!serviziTurno(code)[servizio];
   }
 
   // PASS 1: assign staff based on roleReqs (primary) + old slots (fallback)
@@ -2375,7 +2717,7 @@ function generaBozza(){
     // Build role demand: max count per role across fasce for this servizio
     const roleMax={};
     Object.entries(fab.roleReqs||{}).forEach(([fid,reqs])=>{
-      const f=ALL_FASCE.find(f=>f.id==fid);if(!f)return;
+      const f=fascia(fid);if(!f)return;
       if(servizio==='pranzo'&&f.tipo!=='pranzo')return;
       if(servizio==='cena'&&f.tipo!=='cena')return;
       Object.entries(reqs).forEach(([role,count])=>{
@@ -2418,7 +2760,7 @@ function generaBozza(){
         if(!serviceAssigned[di][best.p.id]){serviceAssigned[di][best.p.id]=servizio||'any';weekWorkDays[best.p.id]++;}
         shiftCount[best.p.id][best.bestCode]=(shiftCount[best.p.id][best.bestCode]||0)+1;
         // Pre-assign role
-        ALL_FASCE.forEach(f=>{
+        fasceDelGiorno(wk,di).forEach(f=>{
           if(servizio==='pranzo'&&f.tipo!=='pranzo')return;
           if(servizio==='cena'&&f.tipo!=='cena')return;
           if(!shiftInFascia(best.bestCode,f.id))return;
@@ -2543,27 +2885,66 @@ function legDrop(e,i){
 }
 function renderLegenda(){
   const el=document.getElementById('leg-main-table');if(!el)return;
-  const fh=ALL_FASCE.map(f=>`<th class="cb-th ${f.tipo==='pranzo'?'fp':'fc'}">${f.label}</th>`).join('');
-  let h=`<thead><tr><th style="width:20px;"></th><th style="text-align:left;padding:5px 8px;">Codice</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Pranzo</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Cena</th>${fh}<th style="text-align:left;min-width:160px;padding:5px 8px;background:#f0e6ff;color:#7e22ce;">Ruoli compatibili</th><th></th></tr></thead><tbody>`;
-  G.shifts.forEach((s,i)=>{
+  // Le fasce coperte non si spuntano piu' a mano: si ricavano dagli
+  // orari del turno (vedi shiftInFascia), perche' lo stesso codice
+  // viene usato in giorni con fasce diverse.
+  let h=`<thead><tr><th style="width:20px;"></th><th style="text-align:left;padding:5px 8px;">Codice</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Pranzo</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Cena</th><th style="text-align:left;padding:5px 8px;">Pausa</th><th style="padding:5px 8px;">Ore</th><th style="text-align:left;padding:5px 8px;">Serve</th><th style="text-align:left;min-width:160px;padding:5px 8px;background:#f0e6ff;color:#7e22ce;">Ruoli compatibili</th><th></th></tr></thead><tbody>`;
+  const righe=G.shifts.map((s,i)=>({s,i}));
+  const attivi=righe.filter(r=>!r.s.archiviato), archiviati=righe.filter(r=>r.s.archiviato);
+  attivi.forEach(({s,i})=>{h+=legRiga(s,i,false);});
+  if(archiviati.length){
+    h+=`<tr><td colspan="9" style="padding:10px 8px 5px;background:var(--bg3);text-align:left;">
+      <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;">Archiviati (${archiviati.length})</span>
+      <span style="font-size:11px;color:var(--text3);margin-left:8px;">Non si possono piu' assegnare, ma restano qui perch&eacute; le settimane passate continuino a leggerli.</span>
+    </td></tr>`;
+    archiviati.forEach(({s,i})=>{h+=legRiga(s,i,true);});
+  }
+  el.innerHTML=h+'</tbody>';
+}
+function legRiga(s,i,arch){
+  let h='';
+  if(arch){
+    h+=`<tr style="opacity:.55;background:var(--bg2);">
+      <td style="padding:3px 5px;color:var(--text3);font-size:12px;">&#128230;</td>`;
+  } else {
     h+=`<tr draggable="true" ondragstart="legDragStart(event,${i})" ondragover="legDragOver(event,${i})" ondrop="legDrop(event,${i})" style="cursor:grab;">
-      <td style="padding:3px 5px;color:var(--text3);font-size:16px;cursor:grab;">⠿</td>
-      <td><span style="${shiftColorStyle(s.code)}padding:2px 8px;border-radius:4px;font-weight:600;font-size:12px;">${s.code}</span>
+      <td style="padding:3px 5px;color:var(--text3);font-size:16px;cursor:grab;">⠿</td>`;
+  }
+  h+=`<span style="${shiftColorStyle(s.code)}padding:2px 8px;border-radius:4px;font-weight:600;font-size:12px;">${s.code}</span>
           <input type="text" value="${s.code}" onchange="G.shifts[${i}].code=this.value;renderLegSidebar();" style="width:52px;font-weight:600;font-family:inherit;margin-left:4px;"></td>
       <td><input type="text" value="${s.s1||''}" placeholder="inizio" onchange="G.shifts[${i}].s1=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e1||''}" placeholder="fine" onchange="G.shifts[${i}].e1=this.value" style="width:46px;font-family:inherit;"></td>
       <td><input type="text" value="${s.s2||''}" placeholder="inizio" onchange="G.shifts[${i}].s2=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e2||''}" placeholder="fine" onchange="G.shifts[${i}].e2=this.value" style="width:46px;font-family:inherit;"></td>`;
-    ALL_FASCE.forEach(f=>{h+=`<td><input type="checkbox" ${s.fasce&&s.fasce.includes(f.id)?'checked':''} onchange="toggleFascia(${i},${f.id},this.checked)"></td>`;});
+    h+=`<td><input type="text" value="${s.pausa||''}" placeholder="hh:mm/hh:mm" onchange="G.shifts[${i}].pausa=this.value;renderLegenda();renderLegSidebar();" style="width:88px;font-family:inherit;"></td>
+      <td style="text-align:center;font-variant-numeric:tabular-nums;color:var(--text2);font-size:12px;">${oreTesto(oreTurno(s))}</td>
+      <td style="font-size:11px;color:var(--text2);white-space:nowrap;">${serveTesto(s)}</td>`;
     const compatRoles=s.compatibleRoles||[];
-    h+=`<td style="padding:3px 6px;background:#f9f3ff;"><div style="display:flex;flex-wrap:wrap;gap:2px;">${ROLES.map(r=>{const on=compatRoles.includes(r);return`<label style="display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;padding:1px 4px;border-radius:3px;background:${on?'#7e22ce':'transparent'};color:${on?'#fff':'var(--text2)'};border:0.5px solid ${on?'#7e22ce':'var(--border)'};"><input type="checkbox" style="display:none;" ${on?'checked':''} onchange="toggleCompatRole(${i},'${r}',this.checked)">${r}</label>`;}).join('')}</div></td>`;    h+=`<td><button style="background:none;border:none;cursor:pointer;color:var(--red-text);font-size:14px;padding:0 4px;" onclick="remShift(${i})">×</button></td></tr>`;
-  });
-  el.innerHTML=h+'</tbody>';
+    h+=`<td style="padding:3px 6px;background:#f9f3ff;"><div style="display:flex;flex-wrap:wrap;gap:2px;">${ROLES.map(r=>{const on=compatRoles.includes(r);return`<label style="display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;padding:1px 4px;border-radius:3px;background:${on?'#7e22ce':'transparent'};color:${on?'#fff':'var(--text2)'};border:0.5px solid ${on?'#7e22ce':'var(--border)'};"><input type="checkbox" style="display:none;" ${on?'checked':''} onchange="toggleCompatRole(${i},'${r}',this.checked)">${r}</label>`;}).join('')}</div></td>`;
+  h+=arch
+    ? `<td style="white-space:nowrap;"><button class="btn" style="font-size:10px;padding:3px 8px;" onclick="archiviaTurno(${i},false)">Ripristina</button></td></tr>`
+    : `<td style="white-space:nowrap;">
+        <button title="Archivia: sparisce dalle scelte ma le settimane passate continuano a leggerlo" style="background:none;border:none;cursor:pointer;font-size:13px;padding:0 3px;" onclick="archiviaTurno(${i},true)">&#128230;</button>
+        <button title="Elimina del tutto" style="background:none;border:none;cursor:pointer;color:var(--red-text);font-size:14px;padding:0 4px;" onclick="remShift(${i})">×</button></td></tr>`;
+  return h;
 }
-function toggleFascia(i,fid,on){const s=G.shifts[i];if(!s.fasce)s.fasce=[];if(on){if(!s.fasce.includes(fid))s.fasce.push(fid);}else{s.fasce=s.fasce.filter(x=>x!==fid);}renderLegSidebar();}
+// Il campo "fasce" dei turni non si modifica piu' da qui, ma resta
+// salvato: serve a rileggere le settimane fino al 1 novembre.
 function toggleCompatRole(i,role,on){const s=G.shifts[i];if(!s.compatibleRoles)s.compatibleRoles=[];if(on){if(!s.compatibleRoles.includes(role))s.compatibleRoles.push(role);}else{s.compatibleRoles=s.compatibleRoles.filter(r=>r!==role);}renderLegenda();}
 async function saveShifts(){await dbSaveShifts();renderAll();alert('Legenda salvata!');}
-function remShift(i){G.shifts.splice(i,1);renderLegenda();}
+function remShift(i){
+  const s=G.shifts[i];if(!s)return;
+  // Se il codice compare in qualche settimana, cancellarlo cambia il
+  // passato: nel giornaliero quelle persone sparirebbero dalle fasce.
+  let usato=0;
+  (G.weeks||[]).forEach(wk=>{
+    Object.values(wk.shift_assign||{}).forEach(g=>{
+      Object.values(g||{}).forEach(v=>{if(v===s.code)usato++;});
+    });
+  });
+  if(usato&&!confirm(`${s.code} compare ${usato} volt${usato===1?'a':'e'} nelle settimane salvate.\n\nCancellarlo cambia anche il passato: nel giornaliero di quelle settimane le persone spariranno dalle fasce.\n\nMeglio archiviarlo (l'icona accanto). Vuoi cancellarlo lo stesso?`))return;
+  G.shifts.splice(i,1);renderLegenda();renderLegSidebar();markDirty();
+}
 function addShift(){
-  const newShift={code:'NEW',s1:'',e1:'',s2:'',e2:'',is_off:false,is_ferie:false,fasce:[],compatibleRoles:[]};
+  const newShift={code:'NEW',s1:'',e1:'',s2:'',e2:'',pausa:'',is_off:false,is_ferie:false,fasce:[],compatibleRoles:[]};
   // Insert alphabetically by code — find insertion point
   const idx=G.shifts.findIndex(s=>!s.is_off&&!s.is_ferie&&s.code!=='MALATTIA'&&s.code>'NEW');
   if(idx>=0)G.shifts.splice(idx,0,newShift);
@@ -2617,9 +2998,9 @@ function showDraftPanel(){
 // ===== AUTO FILL ROLES =====
 function autoFillRoles(){
   const wk=curWeek();if(!wk)return;
+  if(vietatoSeChiusa(wk,'le postazioni non si ricompilano'))return;
   const di=wk.selected_day;const tipo=wk.day_config[di];
-  const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
-  const fasce=fasciaIdxs.map(i=>fascia(i)).filter(Boolean);
+  const fasce=fasceDelGiorno(wk,di);
   pushUndo(wk);
   fasce.forEach(f=>{
     const fabKey=tipo==='pranzo_cena'?(f.tipo==='pranzo'?`${di}_pranzo`:`${di}_cena`):String(di);
@@ -2665,7 +3046,7 @@ function checkIncompleteness(wk){
   const openDays=DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:wk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
   openDays.forEach(d=>{
     const di=d.idx;const tipo=d.tipo;
-    const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
+    const fasciaIdxs=fasceIdsDelGiorno(wk,di);
     fasciaIdxs.forEach(fi=>{
       const f=fascia(fi);if(!f)return;
       const fabKey=tipo==='pranzo_cena'?(f.tipo==='pranzo'?`${di}_pranzo`:`${di}_cena`):String(di);
@@ -2798,7 +3179,7 @@ function applyPosRules(wk,di,tipo,roleAssign){
   G.posRules.forEach(rule=>{
     if(!rule.personA||!rule.personB)return;
     if((rule.excludeDays||[]).includes(di))return;
-    const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
+    const fasciaIdxs=fasceIdsDelGiorno(wk,di);
     fasciaIdxs.forEach(fi=>{
       const f=fascia(fi);if(!f)return;
       const keyA=`${di}_${f.id}_${rule.personA}`;
@@ -2856,6 +3237,7 @@ async function saveAll(){
   const wkId=sel?sel.value:G.currentWeekId;
   const wk=G.weeks.find(w=>w.id===wkId);
   if(!wk){alert('Nessuna settimana selezionata.');return;}
+  if(vietatoSeChiusa(wk,'non si salva piu\' nulla su di lei'))return;
   // Double-check: confirm which week we're saving
   console.log('Saving week from selector:', wk.id, wk.name);
   const btn=document.getElementById('save-btn');
@@ -2996,9 +3378,7 @@ async function previewVersion(versionId){
   // GIORNALIERO per ogni giorno
   h+='<p style="font-size:11px;font-weight:500;color:var(--text2);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Giornaliero per fascia</p>';
   days.forEach(d=>{
-    const tipo=d.tipo;
-    const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
-    const fasce=fasciaIdxs.map(i=>fascia(i)).filter(Boolean);
+    const fasce=fasceDelGiorno(wk,d.idx);
     const dateStr=weekDates?` ${weekDates[d.idx].getDate()}`:' ';
     h+=`<p style="font-size:10px;font-weight:600;color:var(--text2);margin:8px 0 3px;">${d.name}${dateStr}</p>`;
     h+='<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;width:100%;margin-bottom:8px;">';
@@ -3220,6 +3600,115 @@ function ferieColleghiDelGiorno(dateStr,escludiId){
   return out;
 }
 
+// ===== MONTE FERIE =====
+// Il monte si conta in GIORNATE, anno solare, e il residuo dell'anno
+// prima si somma a quello nuovo. Il monte annuale lo scrive il
+// manager, persona per persona, in staff.ferieMonte = {"2026":26}.
+// Non si blocca niente: se una persona sfora, il saldo va in rosso e
+// resta la decisione del manager.
+function annoOggi(){return new Date().getFullYear();}
+function monteAnno(p,anno){
+  const v=((p&&p.ferieMonte)||{})[String(anno)];
+  return(v===undefined||v===null||v==='')?null:(Number(v)||0);
+}
+function anniConMonte(p){
+  return Object.keys((p&&p.ferieMonte)||{}).map(Number).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+}
+// Le giornate di ferie di un anno: unione fra le FERIE scritte nella
+// griglia dei turni e i giorni approvati delle richieste. Si usa un
+// Set di date, cosi' lo stesso giorno non viene contato due volte
+// quando arriva da entrambe le strade.
+function giorniFerieUsati(staffId,anno){
+  const g=new Set();const a=String(anno);
+  (G.ferieRichieste||[]).forEach(r=>{
+    if(r.staff_id!==staffId)return;
+    (r.giorni_approvati||[]).forEach(d=>{if(d&&String(d).slice(0,4)===a)g.add(d);});
+  });
+  (G.weeks||[]).forEach(wk=>{
+    if(!wk.startDate)return;// settimana senza data: non so a che anno attribuirla
+    const base=new Date(wk.startDate+'T12:00:00');
+    for(let di=0;di<7;di++){
+      const giorno=(wk.shift_assign||{})[di]||{};
+      if(![giorno[staffId],giorno[staffId+'_P'],giorno[staffId+'_C']].some(v=>v==='FERIE'))continue;
+      const d=new Date(base);d.setDate(d.getDate()+di);
+      const s=dateToStr(d);
+      if(s.slice(0,4)===a)g.add(s);
+    }
+  });
+  return g;
+}
+function ferieUsate(staffId,anno){return giorniFerieUsati(staffId,anno).size;}
+// Residuo portato dall'anno prima. Puo' venire negativo: se l'anno
+// scorso ha sforato, il debito si trascina.
+function ferieResiduo(p,anno,prof){
+  prof=prof||0;if(prof>15)return 0;
+  const anni=anniConMonte(p);
+  if(!anni.length||anno<=anni[0])return 0;
+  return ferieDisponibili(p,anno-1,prof+1)-ferieUsate(p.id,anno-1);
+}
+function ferieDisponibili(p,anno,prof){
+  const m=monteAnno(p,anno);
+  return(m===null?0:m)+ferieResiduo(p,anno,prof);
+}
+function ferieRestanti(p,anno){return ferieDisponibili(p,anno)-ferieUsate(p.id,anno);}
+function setMonteFerie(pid,anno,val){
+  const p=G.allStaff.find(s=>s.id===pid);if(!p)return;
+  if(!p.ferieMonte)p.ferieMonte={};
+  const t=String(val||'').trim();
+  if(t==='')delete p.ferieMonte[String(anno)];
+  else p.ferieMonte[String(anno)]=Math.max(0,Number(t)||0);
+  markDirty();renderFerie();
+}
+function cambiaAnnoMonte(v){window._monteAnno=Number(v)||annoOggi();renderFerie();}
+
+function buildFerieMonteHtml(){
+  const anno=window._monteAnno||annoOggi();
+  const persone=G.allStaff.filter(s=>repOf(s)===REP&&s.attivo!==false&&!isExtra(s));
+  const anni=[];for(let a=annoOggi()-2;a<=annoOggi()+1;a++)anni.push(a);
+  let html=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+    <label style="font-size:12px;font-weight:500;color:var(--text2);">Anno</label>
+    <select onchange="cambiaAnnoMonte(this.value)" style="font-size:12px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;font-family:inherit;">
+      ${anni.map(a=>`<option value="${a}"${a===anno?' selected':''}>${a}</option>`).join('')}
+    </select>
+    <span style="font-size:11px;color:var(--text3);">Scrivi il monte dell'anno: il residuo dell'anno prima si somma da solo.</span>
+  </div>`;
+  if(!persone.length)return html+'<p style="color:var(--text3);font-size:12px;">Nessuna persona in '+repLabel()+'.</p>';
+  html+='<div class="wrap"><table><thead><tr>'
+    +'<th style="text-align:left;padding:5px 8px;">Persona</th>'
+    +`<th style="padding:5px 8px;">Monte ${anno}</th>`
+    +`<th style="padding:5px 8px;">Residuo ${anno-1}</th>`
+    +'<th style="padding:5px 8px;">Disponibili</th>'
+    +'<th style="padding:5px 8px;">Usate</th>'
+    +'<th style="padding:5px 8px;">Restanti</th></tr></thead><tbody>';
+  let senzaMonte=0;
+  persone.forEach(p=>{
+    const m=monteAnno(p,anno);if(m===null)senzaMonte++;
+    const res=ferieResiduo(p,anno), disp=ferieDisponibili(p,anno);
+    const usate=ferieUsate(p.id,anno), rest=disp-usate;
+    const col=rest<0?'var(--red-text)':rest===0?'var(--orange-text)':'var(--text)';
+    const num=v=>v%1?String(v).replace('.',','):String(v);
+    html+=`<tr>
+      <td style="text-align:left;padding:4px 8px;font-weight:500;">${p.name}</td>
+      <td style="padding:3px;text-align:center;">
+        <input type="number" min="0" max="365" step="0.5" value="${m===null?'':m}" placeholder="—"
+          onchange="setMonteFerie('${p.id}',${anno},this.value)"
+          style="width:60px;padding:3px 4px;border-radius:var(--radius);border:0.5px solid ${m===null?'var(--border2)':'var(--blue-border)'};background:${m===null?'#fff':'var(--blue-bg)'};font-size:12px;text-align:center;font-family:inherit;"></td>
+      <td style="padding:4px 8px;text-align:center;font-size:12px;color:var(--text2);font-variant-numeric:tabular-nums;">${res?num(res):'—'}</td>
+      <td style="padding:4px 8px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums;">${num(disp)}</td>
+      <td style="padding:4px 8px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums;">${usate||'—'}</td>
+      <td style="padding:4px 8px;text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:${col};">${num(rest)}</td>
+    </tr>`;
+  });
+  html+='</tbody></table></div>';
+  html+=`<p style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5;">
+    Le <b>usate</b> contano ogni FERIE presente nella griglia dei turni, sia nata da una richiesta approvata sia scritta a mano: lo stesso giorno non viene mai contato due volte.
+    Le settimane senza data di inizio non vengono conteggiate, perch&eacute; non si sa a quale anno appartengono.
+    Se una persona sfora, il saldo va in rosso ma non viene bloccato niente.</p>`;
+  if(senzaMonte)html+=`<p style="font-size:11px;color:var(--orange-text);margin-top:6px;">&#9888; ${senzaMonte} person${senzaMonte===1?'a':'e'} senza monte impostato per il ${anno}: per loro il disponibile parte da zero.</p>`;
+  html+=`<p style="font-size:11px;color:var(--text3);margin-top:6px;">Ricordati di premere <b>Salva</b> in alto dopo aver cambiato i monte.</p>`;
+  return html;
+}
+
 function ferieDaTurni(dateStr){
   const out=[];
   const wk=settimanaDelGiorno(dateStr);
@@ -3292,10 +3781,12 @@ function renderFerieManager(el){
     <button onclick="window._ferieTab='richieste';renderFerie()" style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;background:${tab==='richieste'?'#fff':'transparent'};color:${tab==='richieste'?'var(--text)':'var(--text2)'};font-weight:${tab==='richieste'?'500':'400'};">Richieste</button>
     <button onclick="window._ferieTab='calendario';renderFerie()" style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;background:${tab==='calendario'?'#fff':'transparent'};color:${tab==='calendario'?'var(--text)':'var(--text2)'};font-weight:${tab==='calendario'?'500':'400'};">Calendario</button>
     <button onclick="window._ferieTab='finestre';renderFerie()" style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;background:${tab==='finestre'?'#fff':'transparent'};color:${tab==='finestre'?'var(--text)':'var(--text2)'};font-weight:${tab==='finestre'?'500':'400'};">Periodi</button>
+    <button onclick="window._ferieTab='monte';renderFerie()" style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-family:inherit;background:${tab==='monte'?'#fff':'transparent'};color:${tab==='monte'?'var(--text)':'var(--text2)'};font-weight:${tab==='monte'?'500':'400'};">Monte ferie</button>
   </div>`;
 
   if(tab==='richieste')html+=buildFerieRichiesteHtml();
   else if(tab==='calendario')html+=buildFerieCalendarioHtml();
+  else if(tab==='monte')html+=buildFerieMonteHtml();
   else html+=buildFerieFinestreHtml();
 
   el.innerHTML=html;
@@ -3327,6 +3818,17 @@ function buildFerieRichiesteHtml(){
           <div style="flex:1;min-width:200px;">
             <div style="font-weight:500;">${staff?staff.name:'?'}</div>
             <div style="font-size:11px;color:var(--text2);margin-top:4px;">${giorni.length} giorn${giorni.length===1?"o":"i"} richiest${giorni.length===1?"o":"i"}</div>
+            ${(()=>{
+              // Saldo ferie: cosa resta ora e cosa resterebbe approvando tutto
+              if(!staff)return'';
+              const annoR=String(giorni[0]||'').slice(0,4)||String(annoOggi());
+              if(monteAnno(staff,Number(annoR))===null&&!ferieResiduo(staff,Number(annoR)))
+                return`<div style="font-size:11px;color:var(--text3);margin-top:3px;">Monte ferie ${annoR} non impostato</div>`;
+              const gAnno=giorni.filter(g=>String(g).slice(0,4)===annoR).length;
+              const ora=ferieRestanti(staff,Number(annoR)), dopo=ora-gAnno;
+              const col=dopo<0?'var(--red-text)':dopo===0?'var(--orange-text)':'var(--text)';
+              return`<div style="font-size:11px;color:var(--text2);margin-top:3px;">Monte ${annoR}: restano <b>${ora}</b> &rarr; approvando tutto <b style="color:${col};">${dopo}</b></div>`;
+            })()}
             <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:6px;">
               ${giorni.map(g=>{
                 const d=new Date(g+'T12:00:00');
@@ -4309,7 +4811,7 @@ function modificaRichiesta(id){
         <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Turno richiesto</label>
         <select id="edit-rich-turno" style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;background:#fff;">
           <option value="OFF"${r.turno_richiesto==='OFF'?' selected':''}>OFF (riposo)</option>
-          ${G.shifts.filter(s=>!s.is_ferie).map(s=>`<option value="${s.code}"${s.code===r.turno_richiesto?' selected':''}>${s.code}${s.s1&&s.e1?' ('+s.s1+'–'+s.e1+')':s.s2&&s.e2?' ('+s.s2+'–'+s.e2+')':''}</option>`).join('')}
+          ${turniSceglibili(r.turno_richiesto).filter(s=>!s.is_ferie).map(s=>`<option value="${s.code}"${s.code===r.turno_richiesto?' selected':''}>${s.code}${s.s1&&s.e1?' ('+s.s1+'–'+s.e1+')':s.s2&&s.e2?' ('+s.s2+'–'+s.e2+')':''}</option>`).join('')}
         </select>
       </div>
       <div>
@@ -4442,7 +4944,7 @@ function apriFormRichiesta(){
         <select id="rich-turno" style="width:100%;padding:7px 10px;border-radius:var(--radius);border:0.5px solid var(--border2);font-family:inherit;font-size:13px;background:#fff;">
           <option value="">— Seleziona —</option>
           <option value="OFF">OFF (riposo)</option>
-          ${G.shifts.filter(s=>!s.is_ferie).map(s=>`<option value="${s.code}">${s.code}${s.s1&&s.e1?' ('+s.s1+'–'+s.e1+')':s.s2&&s.e2?' ('+s.s2+'–'+s.e2+')':''}</option>`).join('')}
+          ${turniSceglibili().filter(s=>!s.is_ferie).map(s=>`<option value="${s.code}">${s.code}${s.s1&&s.e1?' ('+s.s1+'–'+s.e1+')':s.s2&&s.e2?' ('+s.s2+'–'+s.e2+')':''}</option>`).join('')}
         </select>
       </div>
       <div>
@@ -4565,7 +5067,7 @@ function renderDispManager(el){
       <div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:3px;">${day}</div>
       ${available.map(s=>{
         const d=getDisp(s.id,dateStr);
-        const fl=d&&d.fasce&&d.fasce.length?d.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label:'';}).join(', '):'Tutto il giorno';
+        const fl=d&&d.fasce&&d.fasce.length?d.fasce.map(fid=>{const f=fascia(fid);return f?f.label:'';}).join(', '):'Tutto il giorno';
         return `<span onclick="showDispDetail('${s.id}','${dateStr}')"
           style="display:block;font-size:9px;background:#dcfce7;border:0.5px solid #86efac;border-radius:3px;padding:1px 4px;margin-bottom:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
           title="${s.name} — ${fl}">${s.name}</span>`;
@@ -4582,7 +5084,7 @@ function showDispDetail(staffId,dateStr){
   const dateObj=new Date(dateStr+'T12:00:00');
   const dateLabel=dateObj.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
   const fasce=d.fasce&&d.fasce.length
-    ?d.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label+' ('+f.orario+')':fid;}).join('<br>')
+    ?d.fasce.map(fid=>{const f=fascia(fid);return f?f.label+' ('+f.orario+')':fid;}).join('<br>')
     :'Tutto il giorno';
   const popup=document.createElement('div');
   popup.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:600;display:flex;align-items:center;justify-content:center;';
@@ -4638,7 +5140,7 @@ function renderDispCalendar(el,staffId,canEdit){
     const disp=getDisp(staffId,dateStr);
     const hasFull=disp&&(!disp.fasce||!disp.fasce.length);
     const hasSome=disp&&disp.fasce&&disp.fasce.length>0;
-    const labels=disp&&disp.fasce&&disp.fasce.length?disp.fasce.map(fid=>{const f=ALL_FASCE.find(f=>f.id==fid);return f?f.label.slice(0,3):'';}).join(', '):'';
+    const labels=disp&&disp.fasce&&disp.fasce.length?disp.fasce.map(fid=>{const f=fascia(fid);return f?f.label.slice(0,3):'';}).join(', '):'';
     let bg=isPast?'var(--bg3)':hasFull||hasSome?'#dcfce7':'#fff';
     let border=hasFull||hasSome?'#86efac':'var(--border)';
     html+=`<div onclick="${!isPast?`openDispDay('${staffId}','${dateStr}')`:''}"
@@ -4758,7 +5260,7 @@ function exportPDF(){
     if(d.tipo==='pranzo_cena'){cols.push({...d,label,servizio:'pranzo',colLabel:'P'});cols.push({...d,label,servizio:'cena',colLabel:'C'});}
     else cols.push({...d,label,servizio:null});
   });
-  let html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Turni '+wk.name+'</title><style>body{font-family:Arial,sans-serif;font-size:10px;margin:16px;}h1{font-size:14px;margin-bottom:8px;}h2{font-size:11px;margin:14px 0 4px;page-break-before:avoid;}table{border-collapse:collapse;width:100%;margin-bottom:12px;}th,td{border:0.5px solid #ccc;padding:2px 4px;text-align:center;}th{background:#f0f0f0;font-weight:600;}.name{text-align:left;font-weight:500;}.off{background:#111;color:#fff;}.b{background:#1a56db;color:#fff;}.d{background:#e65100;color:#fff;}.m{background:#6b7280;color:#fff;}.a{background:#c026d3;color:#fff;}.e{background:#dc2626;color:#fff;}@media print{body{margin:8px;}}</style></head><body>';
+  let html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>Turni '+wk.name+'</title><style>body{font-family:Arial,sans-serif;font-size:10px;margin:16px;}h1{font-size:14px;margin-bottom:8px;}h2{font-size:11px;margin:14px 0 4px;page-break-before:avoid;}table{border-collapse:collapse;width:100%;margin-bottom:12px;}th,td{border:0.5px solid #ccc;padding:2px 4px;text-align:center;}th{background:#f0f0f0;font-weight:600;}.name{text-align:left;font-weight:500;}.off{background:#111;color:#fff;}.b{background:#1a56db;color:#fff;}.d{background:#e65100;color:#fff;}.c{background:#e65100;color:#fff;}.m{background:#6b7280;color:#fff;}.br{background:#6b7280;color:#fff;}.a{background:#c026d3;color:#fff;}.r{background:#c026d3;color:#fff;}.e{background:#dc2626;color:#fff;}@media print{body{margin:8px;}}</style></head><body>';
   html+='<h1>Turni settimana: '+wk.name+'</h1>';
   html+='<table><thead><tr><th class="name">Operatore</th>';
   let lastDi=-1;
@@ -4771,16 +5273,14 @@ function exportPDF(){
       const u=val.toUpperCase();
       let cls='';
       if(u==='OFF'||u==='FERIE'||u==='MALATTIA')cls='off';
-      else if(u[0]==='B')cls='b';else if(u[0]==='D')cls='d';else if(u[0]==='M')cls='m';else if(u[0]==='A')cls='a';else if(u[0]==='E')cls='e';
+      else if(u.startsWith('BR'))cls='br';else if(u[0]==='B')cls='b';else if(u[0]==='C')cls='c';else if(u[0]==='R')cls='r';else if(u[0]==='D')cls='d';else if(u[0]==='M')cls='m';else if(u[0]==='A')cls='a';else if(u[0]==='E')cls='e';
       html+='<td class="'+cls+'">'+val+'</td>';
     });
     html+='</tr>';
   });
   html+='</tbody></table><h1>Giornaliero per fascia</h1>';
   days.forEach(d=>{
-    const tipo=d.tipo;
-    const fasciaIdxs=tipo==='pranzo_cena'?IDX_PC:IDX_CENA;
-    const fasce=fasciaIdxs.map(i=>fascia(i)).filter(Boolean);
+    const fasce=fasceDelGiorno(wk,d.idx);
     const dateStr=weekDates?' '+weekDates[d.idx].getDate():'';
     html+='<h2>'+d.name+dateStr+'</h2><table><thead><tr><th class="name">Staff</th>';
     fasce.forEach(f=>{html+='<th>'+f.label+'</th>';});
@@ -4954,7 +5454,7 @@ function fabPanelGiorno(di){
   if(tipo==='chiuso')return '<p style="font-size:12px;color:var(--text3);">Giorno chiuso.</p>';
   const ap=aperturaGiorno(di);
   const fab=getFabGiorno(di,ap);
-  const fasce=(tipo==='pranzo_cena'?IDX_PC:IDX_CENA).map(i=>fascia(i)).filter(Boolean);
+  const fasce=fasceDelGiorno(wk,di);
   let html='<p style="font-size:10px;color:var(--text2);margin-bottom:10px;">Postazioni richieste per questa giornata, fascia per fascia. Segue il giorno che stai guardando e si aggiorna mentre assegni.</p>';
   let vuoto=true;
   fasce.forEach(f=>{
