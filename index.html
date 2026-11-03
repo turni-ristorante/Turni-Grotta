@@ -3754,12 +3754,18 @@ function anniConMonte(p){
 // griglia dei turni e i giorni approvati delle richieste. Si usa un
 // Set di date, cosi' lo stesso giorno non viene contato due volte
 // quando arriva da entrambe le strade.
+// Cosa c'e' nella griglia per quella persona in quel giorno.
+// undefined = nessuna settimana copre quel giorno; [] = casella vuota.
+function celleDelGiorno(staffId,dateStr){
+  const wk=settimanaDelGiorno(dateStr);
+  if(!wk||!wk.startDate)return undefined;
+  const di=Math.round((new Date(dateStr+'T12:00:00')-new Date(wk.startDate+'T12:00:00'))/86400000);
+  const g=(wk.shift_assign||{})[di]||{};
+  return [g[staffId],g[staffId+'_P'],g[staffId+'_C']].filter(v=>v!==undefined&&v!==null&&v!=='');
+}
 function giorniFerieUsati(staffId,anno){
   const g=new Set();const a=String(anno);
-  (G.ferieRichieste||[]).forEach(r=>{
-    if(r.staff_id!==staffId)return;
-    (r.giorni_approvati||[]).forEach(d=>{if(d&&String(d).slice(0,4)===a)g.add(d);});
-  });
+  // 1) le FERIE scritte nella griglia: quelle contano sempre
   (G.weeks||[]).forEach(wk=>{
     if(!wk.startDate)return;// settimana senza data: non so a che anno attribuirla
     const base=new Date(wk.startDate+'T12:00:00');
@@ -3770,6 +3776,19 @@ function giorniFerieUsati(staffId,anno){
       const s=dateToStr(d);
       if(s.slice(0,4)===a)g.add(s);
     }
+  });
+  // 2) i giorni approvati da richiesta. Qui comanda la griglia: se in
+  // quel giorno e' stato messo un turno (o un OFF) la ferie non c'e'
+  // piu' e non deve contare. Se la casella e' ancora vuota, vuol dire
+  // approvata ma non ancora scritta, e continua a contare.
+  (G.ferieRichieste||[]).forEach(r=>{
+    if(r.staff_id!==staffId)return;
+    (r.giorni_approvati||[]).forEach(d=>{
+      if(!d||String(d).slice(0,4)!==a||g.has(d))return;
+      const celle=celleDelGiorno(staffId,d);
+      if(celle&&celle.length&&!celle.includes('FERIE'))return;// la griglia dice altro
+      g.add(d);
+    });
   });
   return g;
 }
