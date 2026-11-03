@@ -363,11 +363,31 @@ function minuti(hhmm){
 // Da 'HH:MM/HH:MM' a [inizio,fine] in minuti. Le fasce storiche non si
 // calcolano (una finisce a 'C' = chiusura): per loro vale il dato salvato.
 function rangeFascia(f){
-  if(!f||f.legacy||!f.orario)return null;
+  if(!f||!f.orario)return null;
   const p=String(f.orario).split('/');if(p.length!==2)return null;
-  const a=minuti(p[0]),b=minuti(p[1]);
-  if(a===null||b===null)return null;
+  const a=minuti(p[0]);if(a===null)return null;
+  let b=minuti(p[1]);
+  if(b===null){
+    if(!/^c$/i.test(String(p[1]).trim()))return null;
+    b=1440;// 'C' = chiusura
+  }
   return[a,b<=a?b+1440:b];
+}
+// La disponibilita' di un extra e' un elenco di fasce. Le dichiarazioni
+// fatte prima del cambio fasce usano id che nelle settimane nuove non
+// esistono piu': se il confronto per id non trova niente si confrontano
+// gli ORARI, cosi' le dichiarazioni vecchie continuano a valere.
+function dispCopreServizio(disp,wk,di,servizio){
+  if(!disp)return false;
+  const scelte=disp.fasce||[];
+  if(!scelte.length)return true;// nessuna fascia scelta = tutto il giorno
+  const giorno=fasceDelGiorno(wk,di).filter(f=>!servizio||f.tipo===servizio);
+  if(!giorno.length)return false;
+  if(scelte.some(id=>giorno.some(f=>f.id===id)))return true;
+  return scelte.some(id=>{
+    const a=rangeFascia(fascia(id));if(!a)return false;
+    return giorno.some(f=>{const b=rangeFascia(f);return b&&a[0]<b[1]&&a[1]>b[0];});
+  });
 }
 // Blocchi orari di un turno: [[inizio,fine,aperto],...] in minuti.
 // Alcuni turni vecchi finiscono con 'C' (chiusura) invece che con un
@@ -2026,9 +2046,8 @@ function renderTurniCorpo(wk,wrap){
         // Green for extra availability
         const wkDates=getWeekDates(wk);
         const dStr=wkDates?dateToStr(wkDates[c.idx]):null;
-        const fIds=fasceDelGiorno(wk,c.idx).filter(f=>!c.servizio||f.tipo===c.servizio).map(f=>f.id);
         const disp=dStr&&extra?G.disponibilita[p.id+'_'+dStr]:null;
-        const isAvail=!val&&disp&&(!disp.fasce||!disp.fasce.length||fIds.some(fid=>disp.fasce.includes(fid)));
+        const isAvail=!val&&dispCopreServizio(disp,wk,c.idx,c.servizio);
         // Check for pending richiesta turno
         const richPending=dStr&&!extra?G.richieste.find(r=>r.staff_id===p.id&&r.data===dStr&&r.stato==='in_attesa'):null;
         const bloc=bloccoCasella(c.idx,p.id);
