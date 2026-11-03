@@ -369,15 +369,23 @@ function rangeFascia(f){
   if(a===null||b===null)return null;
   return[a,b<=a?b+1440:b];
 }
-// Blocchi orari di un turno: [[inizio,fine],...] in minuti.
+// Blocchi orari di un turno: [[inizio,fine,aperto],...] in minuti.
+// Alcuni turni vecchi finiscono con 'C' (chiusura) invece che con un
+// orario: l'ora di fine non si sa. Per capire quali fasce coprono li
+// si considera aperti fino a fine giornata, ma le ore restano non
+// calcolabili, perche' inventarle darebbe un numero falso.
 function blocchiTurno(sh){
   if(!sh)return[];
   const out=[];
   [[sh.s1,sh.e1],[sh.s2,sh.e2]].forEach(([s,e])=>{
     if(!s||!e)return;
-    const a=minuti(s),b=minuti(e);
-    if(a===null||b===null)return;
-    out.push([a,b<=a?b+1440:b]);
+    const a=minuti(s);if(a===null)return;
+    let b=minuti(e),aperto=false;
+    if(b===null){
+      if(!/^c$/i.test(String(e).trim()))return;
+      b=1440;aperto=true;// fino a chiusura
+    }
+    out.push([a,b<=a?b+1440:b,aperto]);
   });
   return out;
 }
@@ -907,9 +915,15 @@ function costruisciIstantanea(wk){
     const giorni={};
     for(let di=0;di<7;di++)giorni[di]=fasceIdsDelGiorno(wk,di);
     const usate=new Set();Object.values(giorni).forEach(a=>a.forEach(i=>usate.add(i)));
+    const copertura={};
+    turni.forEach(t=>{
+      if((t.reparto||REP_DEFAULT)!==r)return;
+      copertura[t.code]=[...usate].filter(i=>shiftInFascia(t.code,i));
+    });
     reparti[r]={
       roles:repDef(r).roles.slice(),
       giorni,
+      copertura,// quali fasce copriva ogni turno QUEL giorno: congelata anche la regola
       fasce:[...usate].map(i=>fascia(i)).filter(Boolean).map(f=>({...f}))
     };
     REP=prec;
@@ -990,6 +1004,12 @@ function isFuoriServizio(code){if(!code)return true;const u=code.toUpperCase();i
 // Eccezione: le fasce storiche tengono la lista salvata, per non
 // cambiare nulla sulle settimane fino al 1 novembre.
 function shiftInFascia(code,fid){
+  // Settimana chiusa: vale la copertura congelata, cosi' non cambia
+  // nemmeno se in futuro cambia il modo di calcolarla.
+  if(SNAP){
+    const r=(SNAP.reparti||{})[REP];
+    if(r&&r.copertura&&r.copertura[code])return r.copertura[code].includes(fid);
+  }
   if(isFuoriServizio(code))return false;
   const s=getShift(code);if(!s)return false;
   const f=fascia(fid);if(!f)return false;
@@ -1010,14 +1030,22 @@ function serviziTurno(x){
 }
 // Ore pagate del turno: somma dei blocchi meno la pausa.
 // La pausa si scrive come un orario, es. '19:30/20:00'.
+// Le ore contano solo i blocchi con un orario di fine vero. Se un
+// blocco finisce a chiusura si segnala col '+': '5+' vuol dire almeno
+// cinque ore piu' una sera di lunghezza ignota. Inventare un numero
+// sarebbe peggio che ammettere di non saperlo.
+function oreAperte(s){return blocchiTurno(s).some(b=>b[2]);}
 function oreTurno(s){
   if(!s)return 0;
-  let m=blocchiTurno(s).reduce((t,b)=>t+(b[1]-b[0]),0);
+  let m=blocchiTurno(s).filter(b=>!b[2]).reduce((t,b)=>t+(b[1]-b[0]),0);
   const pa=rangeFascia({orario:s.pausa});
   if(pa)m-=(pa[1]-pa[0]);
   return Math.max(0,m)/60;
 }
-function oreTesto(o){return o?(o%1?o.toFixed(1).replace('.',','):String(o)):'\u2014';}
+function oreTesto(o){
+  if(!o)return'\u2014';
+  return(o%1?o.toFixed(2).replace(/0$/,'').replace('.',','):String(o));
+}
 function serveTesto(s){const v=serviziTurno(s);return v.pranzo&&v.cena?'Pranzo e cena':v.pranzo?'Pranzo':v.cena?'Cena':'\u2014';}
 const isManager=()=>role==='manager'||role==='responsabile';
 const isResponsabile=()=>role==='responsabile';
@@ -2915,7 +2943,7 @@ function legRiga(s,i,arch){
       <td><input type="text" value="${s.s1||''}" placeholder="inizio" onchange="G.shifts[${i}].s1=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e1||''}" placeholder="fine" onchange="G.shifts[${i}].e1=this.value" style="width:46px;font-family:inherit;"></td>
       <td><input type="text" value="${s.s2||''}" placeholder="inizio" onchange="G.shifts[${i}].s2=this.value" style="width:46px;font-family:inherit;"> <input type="text" value="${s.e2||''}" placeholder="fine" onchange="G.shifts[${i}].e2=this.value" style="width:46px;font-family:inherit;"></td>`;
     h+=`<td><input type="text" value="${s.pausa||''}" placeholder="hh:mm/hh:mm" onchange="G.shifts[${i}].pausa=this.value;renderLegenda();renderLegSidebar();" style="width:88px;font-family:inherit;"></td>
-      <td style="text-align:center;font-variant-numeric:tabular-nums;color:var(--text2);font-size:12px;">${oreTesto(oreTurno(s))}</td>
+      <td style="text-align:center;font-variant-numeric:tabular-nums;color:var(--text2);font-size:12px;">${oreTesto(oreTurno(s))}${oreAperte(s)&&oreTurno(s)?'+':''}</td>
       <td style="font-size:11px;color:var(--text2);white-space:nowrap;">${serveTesto(s)}</td>`;
     const compatRoles=s.compatibleRoles||[];
     h+=`<td style="padding:3px 6px;background:#f9f3ff;"><div style="display:flex;flex-wrap:wrap;gap:2px;">${ROLES.map(r=>{const on=compatRoles.includes(r);return`<label style="display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;padding:1px 4px;border-radius:3px;background:${on?'#7e22ce':'transparent'};color:${on?'#fff':'var(--text2)'};border:0.5px solid ${on?'#7e22ce':'var(--border)'};"><input type="checkbox" style="display:none;" ${on?'checked':''} onchange="toggleCompatRole(${i},'${r}',this.checked)">${r}</label>`;}).join('')}</div></td>`;
