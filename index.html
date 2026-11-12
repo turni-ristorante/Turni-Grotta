@@ -331,6 +331,25 @@ const REPARTI={
       // {id:2,label:'POMERIGGIO',orario:'15:30/18:30',tipo:'cena'},
       {id:3,label:'CENA',    orario:'18:30/00:30',tipo:'cena'},
     ]
+  },
+  // ===== MANAGEMENT =====
+  // Reparto particolare: serve solo a vedere i turni di chi fa
+  // management, e alcuni di loro lavorano anche in sala o in cucina.
+  // Quelle persone restano nel LORO reparto e qui entrano come ospiti
+  // (vedi ospitiManagement): i loro turni si vedono ma non si toccano,
+  // perche' sono gli stessi di la'. Niente giornaliero, niente
+  // postazioni, niente fabbisogno: la fascia qui sotto esiste solo
+  // perche' il codice che cerca le fasce trovi qualcosa.
+  management:{
+    id:'management',
+    label:'Management',
+    roles:[],
+    senzaGiornaliero:true,
+    conOspiti:true,
+    textColor:'#111',
+    colorByShape:{doppio:'#c4b5fd',mattina:'#a7f3d0',sera:'#bfdbfe'},
+    shapeLabels:{doppio:'Spezzato',mattina:'Mattina',sera:'Sera'},
+    fasce:[{id:90,label:'GIORNATA',orario:'09:00/02:00',tipo:'cena'}]
   }
 };
 const REP_DEFAULT='sala';
@@ -870,7 +889,10 @@ function settimanaChiusa(wk){return !!(wk&&wk.chiusa_il);}
 // cosi' chi e' stato tolto dallo staff resta visibile dov'era.
 function personePerVista(){
   if(SNAP)return(SNAP.persone||[]).filter(p=>(p.reparto||REP_DEFAULT)===REP);
-  return G.allStaff.filter(s=>repOf(s)===REP);
+  const propri=G.allStaff.filter(s=>repOf(s)===REP);
+  if(!repDef().conOspiti)return propri;
+  const ids=new Set(ospitiManagement());
+  return propri.concat(G.allStaff.filter(s=>repOf(s)!==REP&&ids.has(s.id)));
 }
 function staffPerVista(){return SNAP?personePerVista():G.staff;}
 function ruoliPerVista(){
@@ -997,10 +1019,138 @@ async function assicuraIstantanea(id){
   }catch(e){console.log('istantanea non leggibile:',e.message||e);}
 }
 
+// Normalmente un codice turno si cerca nella legenda del reparto che
+// stai guardando. Nel Management pero' ci sono ospiti di sala e
+// cucina: i loro codici vanno letti nella legenda del LORO reparto,
+// altrimenti 'C1' di cucina diventerebbe il 'C1' di sala.
+let REP_LOOKUP=null;
+function conReparto(r,fn){
+  const prec=REP_LOOKUP;REP_LOOKUP=r;
+  try{return fn();}finally{REP_LOOKUP=prec;}
+}
 function getShift(code){
   // Dentro una settimana chiusa vale la copia salvata, non la legenda viva
   if(SNAP){const t=(SNAP.turni||[]).find(x=>x.code===code);if(t)return t;}
+  if(REP_LOOKUP&&REP_LOOKUP!==REP)
+    return G.allShifts.find(s=>s.code===code&&repOf(s)===REP_LOOKUP)||null;
   return G.shifts.find(s=>s.code===code)||null;
+}
+
+// ===== OSPITI DEL MANAGEMENT =====
+// Chi lavora anche in sala o cucina resta nel suo reparto e qui entra
+// come ospite: i turni si vedono ma non si modificano, perche' sono
+// gli stessi di la' e si aggiornano da soli. Il monte ferie resta nel
+// reparto d'origine, qui non compare.
+function ospitiManagement(){
+  const row=(G.rawConfig||[]).find(x=>x.key==='managementOspiti');
+  if(!row||!row.value)return[];
+  try{const v=JSON.parse(row.value);return Array.isArray(v)?v:[];}catch(e){return[];}
+}
+async function setOspitiManagement(ids){await dbSaveConfig('managementOspiti',ids);}
+function isOspite(p){return !!(repDef().conOspiti&&p&&repOf(p)!==REP);}
+
+// Dai minuti contati dalle 06:00 all'orario da leggere
+function oraDaMinuti(m){
+  const t=((Math.round(m)+360)%1440+1440)%1440;
+  return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+}
+// Chi c'e' e quando, in un dato giorno: blocchi orari persona per persona
+function presenzeDelGiorno(wk,di){
+  const righe=[];let min=Infinity,max=-Infinity;
+  const tipo=(wk.day_config||[])[di];
+  personePerVista().forEach(p=>conReparto(isOspite(p)?repOf(p):null,()=>{
+    const codici=tipo==='pranzo_cena'
+      ?[getShiftCode(wk,di,p.id,'pranzo'),getShiftCode(wk,di,p.id,'cena')]
+      :[getShiftCode(wk,di,p.id,null)];
+    const blocchi=[];
+    [...new Set(codici.filter(Boolean))].forEach(c=>{
+      if(isFuoriServizio(c))return;
+      const sh=getShift(c);if(!sh)return;
+      const stile=shiftColorStyle(c);// dentro conReparto: colore del reparto giusto
+      blocchiTurno(sh).forEach(b=>blocchi.push({a:b[0],b:b[1],aperto:b[2],code:c,stile}));
+    });
+    if(!blocchi.length)return;
+    blocchi.forEach(b=>{min=Math.min(min,b.a);max=Math.max(max,b.b);});
+    righe.push({p,blocchi,ospite:isOspite(p)});
+  }));
+  if(!righe.length)return{righe:[],min:0,max:0};
+  // arrotondo all'ora piena, cosi' il righello e' leggibile
+  return{righe,min:Math.floor(min/60)*60,max:Math.ceil(max/60)*60};
+}
+function cambiaGiornoBarre(i){window._barreGiorno=Number(i);renderTurni();}
+function barreOrarieHtml(wk){
+  if(!repDef().conOspiti)return'';
+  const giorni=DAY_NAMES.map((n,i)=>({n,i,tipo:(wk.day_config||[])[i]})).filter(g=>g.tipo!=='chiuso');
+  if(!giorni.length)return'';
+  let di=window._barreGiorno;
+  if(di===undefined||!giorni.some(g=>g.i===di))di=giorni[0].i;
+  const date=getWeekDates(wk);
+  const nav=giorni.map(g=>`<button class="day-btn ${g.i===di?'active':''} ${g.tipo==='pranzo_cena'?'pc':''}" onclick="cambiaGiornoBarre(${g.i})">${g.n}${date?' '+date[g.i].getDate():''}</button>`).join('');
+  const{righe,min,max}=presenzeDelGiorno(wk,di);
+  let corpo;
+  if(!righe.length){
+    corpo='<p style="font-size:12px;color:var(--text3);padding:8px 0;">Nessuno in servizio questo giorno.</p>';
+  }else{
+    const durata=Math.max(60,max-min);
+    const ore=[];for(let m=min;m<=max;m+=60)ore.push(m);
+    // Le linee verticali vanno dentro ogni riga, ma le etichette delle
+    // ore una volta sola in cima: ripeterle su ogni riga le fa finire
+    // sopra le barre e sopra i nomi.
+    const linee=ore.map(m=>`<div style="position:absolute;left:${(m-min)/durata*100}%;top:0;bottom:0;border-left:0.5px solid var(--border);"></div>`).join('');
+    const etichette=ore.map(m=>`<div style="position:absolute;left:${(m-min)/durata*100}%;font-size:9px;color:var(--text3);transform:translateX(-50%);white-space:nowrap;">${oraDaMinuti(m)}</div>`).join('');
+    corpo=`<div style="overflow-x:auto;"><div style="min-width:620px;padding-right:26px;">
+      <div style="display:flex;align-items:flex-end;gap:8px;height:14px;margin-bottom:2px;">
+        <div style="width:120px;flex-shrink:0;"></div>
+        <div style="position:relative;flex:1;height:12px;">${etichette}</div>
+      </div>
+      ${righe.map(r=>{
+        return`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <div style="width:120px;flex-shrink:0;font-size:12px;${r.ospite?'color:var(--text2);':''}text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${r.p.name}">${r.p.name}</div>
+          <div style="position:relative;flex:1;height:22px;background:var(--bg3);border-radius:4px;">
+            ${linee}
+            ${r.blocchi.map(b=>`<div title="${b.code} ${oraDaMinuti(b.a)}-${b.aperto?'chiusura':oraDaMinuti(b.b)}"
+              style="position:absolute;left:${(b.a-min)/durata*100}%;width:${(b.b-b.a)/durata*100}%;top:2px;bottom:2px;${b.stile}border-radius:3px;font-size:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;${b.aperto?'opacity:.75;':''}">${b.code}</div>`).join('')}
+          </div></div>`;}).join('')}
+    </div></div>`;
+  }
+  return`<div style="margin-top:1.5rem;">
+    <p style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Chi c'&egrave; e quando</p>
+    <div id="barre-nav" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px;">${nav}</div>
+    ${corpo}
+  </div>`;
+}
+
+// ===== SCELTA DEGLI OSPITI =====
+function apriOspiti(){
+  const ids=new Set(ospitiManagement());
+  const altri=G.allStaff.filter(p=>repOf(p)!==REP&&p.attivo!==false);
+  const perReparto={};
+  altri.forEach(p=>{(perReparto[repOf(p)]=perReparto[repOf(p)]||[]).push(p);});
+  document.getElementById('ospiti-popup')?.remove();
+  const el=document.createElement('div');
+  el.id='ospiti-popup';
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:700;display:flex;align-items:center;justify-content:center;';
+  el.onclick=e=>{if(e.target===el)el.remove();};
+  el.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.3rem 1.5rem;width:460px;max-width:95vw;max-height:85vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <h3 style="font-size:14px;font-weight:500;margin-bottom:4px;">Chi vedo nel Management</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">Chi lavora anche altrove resta nel suo reparto: qui i suoi turni si vedono ma non si modificano, e il monte ferie non viene contato qui.</p>
+    ${Object.keys(perReparto).map(r=>`
+      <p style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:.05em;">${repDef(r).label}</p>
+      <div class="cb-grid">${perReparto[r].map(p=>{
+        const on=ids.has(p.id);
+        return`<label class="cb-pill ${on?'checked':''}"><input type="checkbox" class="ospite-cb" value="${p.id}" ${on?'checked':''}>${p.name}</label>`;
+      }).join('')}</div>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:1rem;">
+      <button class="btn primary" onclick="salvaOspiti()">Salva</button>
+      <button class="btn" onclick="document.getElementById('ospiti-popup').remove()">Annulla</button>
+    </div></div>`;
+  document.body.appendChild(el);
+}
+async function salvaOspiti(){
+  const ids=[...document.querySelectorAll('.ospite-cb')].filter(c=>c.checked).map(c=>c.value);
+  await setOspitiManagement(ids);
+  document.getElementById('ospiti-popup')?.remove();
+  renderTurni();
 }
 // I turni vecchi non si cancellano mai: si archiviano. Restano nel
 // database, quindi le settimane passate continuano a riconoscerli
@@ -1062,6 +1212,29 @@ function oreTurno(s){
   if(pa)m-=(pa[1]-pa[0]);
   return Math.max(0,m)/60;
 }
+// Ore settimanali di una persona, dai turni che ha assegnati.
+// In un giorno con doppia apertura lo stesso codice puo' comparire sia
+// nella colonna pranzo sia in quella cena: va contato UNA volta sola,
+// perche' le ore di quel turno comprendono gia' entrambi i blocchi.
+// Due codici diversi nello stesso giorno invece si sommano.
+function oreSettimanali(wk,p,cols){
+  const perGiorno={};
+  cols.forEach(c=>{
+    const code=getShiftCode(wk,c.idx,p.id,c.servizio);
+    if(!code||isFuoriServizio(code))return;
+    (perGiorno[c.idx]=perGiorno[c.idx]||new Set()).add(code);
+  });
+  let ore=0,aperto=false;
+  Object.values(perGiorno).forEach(set=>set.forEach(code=>{
+    const sh=getShift(code);if(!sh)return;
+    ore+=oreTurno(sh);
+    if(oreAperte(sh))aperto=true;
+  }));
+  return{ore,aperto};
+}
+function oreSettimanaliTesto(o){
+  return oreTesto(o.ore)+(o.aperto&&o.ore?'+':'');
+}
 function oreTesto(o){
   if(!o)return'\u2014';
   return(o%1?o.toFixed(2).replace(/0$/,'').replace('.',','):String(o));
@@ -1118,8 +1291,8 @@ function renderApp(){
         ${colorLegendHtml()}
         ${isManager()?`<button class="btn" style="font-size:11px;padding:4px 10px;" onclick="exportPDF()">&#128196; Esporta PDF</button>
           <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openCompare()">&#128065; Confronta</button>
-          <button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="apriFab()">&#128203; Fabbisogno</button>
-          <button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>
+          ${repDef().senzaGiornaliero?'':`<button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="apriFab()">&#128203; Fabbisogno</button>`}
+          ${repDef().senzaGiornaliero?'':`<button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>`}
         <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="doUndo()" title="Annulla ultima modifica">↩ Annulla</button>
         <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="clearWeek()" title="Svuota tutti i turni della settimana">🗑 Pulisci settimana</button>`:''}
       </div>
@@ -1322,19 +1495,21 @@ function contaRichiestePendenti(){
 
 function navGruppi(){
   const gruppi=[];
-  gruppi.push({id:'turni',label:'Turni',items:[
-    ['turni','Turni'],['giornaliero','Giornaliero'],['settimane','Settimane']
-  ]});
+  // Il Management non ha giornaliero: non ci sono postazioni da dare.
+  const senzaG=!!repDef().senzaGiornaliero;
+  gruppi.push({id:'turni',label:'Turni',items:senzaG
+    ?[['turni','Turni'],['settimane','Settimane']]
+    :[['turni','Turni'],['giornaliero','Giornaliero'],['settimane','Settimane']]});
   const staffItems=[['staff','Staff'],['disponibilita','Disponibilità extra']];
   if(isResponsabile())staffItems.push(['managers','Manager']);
   staffItems.push({sep:'Richieste'});
   staffItems.push(['richieste','Richieste turno']);
   staffItems.push(['ferie','Richieste ferie']);
   gruppi.push({id:'staff',label:'Staff',items:staffItems,badge:contaRichiestePendenti()});
-  gruppi.push({id:'config',label:'Configurazione',items:[
-    ['legenda','Legenda turni'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],
-    ['regole','Regole'],['config','Apertura']
-  ]});
+  gruppi.push({id:'config',label:'Configurazione',items:senzaG
+    ?[['legenda','Legenda turni'],['config','Apertura']]
+    :[['legenda','Legenda turni'],['fabbisogno','Fabbisogno'],['equivalenze','Equivalenze'],
+      ['regole','Regole'],['config','Apertura']]});
   gruppi.push({id:'archivio',label:'Archivio',items:[
     ['archivio','Archivio versioni'],['staff-archiviato','Staff archiviato']
   ]});
@@ -1346,7 +1521,7 @@ function renderNav(){
   if(!isManager()){
     // Dipendenti: poche voci, nessun menu
     const isExtraDip=currentDipendente&&isExtra(currentDipendente);
-    const tabs=[['turni','Turni'],['giornaliero','Giornaliero']];
+    const tabs=repDef().senzaGiornaliero?[['turni','Turni']]:[['turni','Turni'],['giornaliero','Giornaliero']];
     if(isExtraDip)tabs.push(['disponibilita','La mia disponibilità']);
     else{
       tabs.push(['richieste','Le mie richieste']);
@@ -2014,6 +2189,9 @@ function renderTurniCorpo(wk,wrap){
     const col=c.tipo==='pranzo_cena'?'#7a5c00':'var(--text)';
     h+=`<th colspan="${span}" style="background:${bg};color:${col};padding:5px 8px;font-size:11px;white-space:nowrap;">${c.label}</th>`;
   });
+  // Le ore si contano solo per i manager: all'operatore non servono.
+  const mostraOre=isManager();
+  if(mostraOre)h+='<th rowspan="2" style="background:var(--bg3);padding:5px 8px;font-size:11px;white-space:nowrap;border-left:2px solid var(--border2);">Ore<br>settimanali</th>';
   h+='</tr>';
   // Row 2: Pranzo/Cena sub-headers
   h+='<tr><th class="scol"></th>';
@@ -2030,13 +2208,17 @@ function renderTurniCorpo(wk,wrap){
   // Use allStaff (includes inactive) to show historical shifts correctly
   const chiusa=settimanaChiusa(wk);
   const staffPerTurni=personePerVista();
-  staffPerTurni.forEach(p=>{
+  // La riga di un ospite si disegna leggendo la legenda del suo
+  // reparto, altrimenti la sigla non verrebbe riconosciuta.
+  staffPerTurni.forEach(p=>conReparto(isOspite(p)?repOf(p):null,()=>{
+    const ospite=isOspite(p);
+    const soloLettura=chiusa||ospite;// i turni di un ospite si cambiano nel suo reparto
     // Check if this person has any shift in this week — if inactive and no shifts, skip
     const hasShift=!cols.every(c=>!getShiftCode(wk,c.idx,p.id,c.servizio));
     const isInactive=p.attivo===false;
     if(isInactive&&!hasShift)return;// hide inactive with no shifts
     const extra=isExtra(p);
-    h+=`<tr${isInactive?' style="opacity:0.6;"':''}><td class="scol">${p.name}${isInactive?'<span style="font-size:9px;color:var(--text3);margin-left:4px;">(archiviato)</span>':''}${isManager()&&p.role?`<br><span style="font-size:10px;font-weight:400;color:var(--text2);">${p.role}</span>`:''}${isManager()&&!extra&&!isInactive?` <br><span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett</span>`:''}</td>`;
+    h+=`<tr${isInactive?' style="opacity:0.6;"':''}><td class="scol">${p.name}${ospite?`<span style="font-size:9px;color:var(--text3);margin-left:4px;" title="Turni gestiti in ${repDef(repOf(p)).label}">(${repDef(repOf(p)).label})</span>`:''}${isInactive?'<span style="font-size:9px;color:var(--text3);margin-left:4px;">(archiviato)</span>':''}${isManager()&&p.role?`<br><span style="font-size:10px;font-weight:400;color:var(--text2);">${p.role}</span>`:''}${isManager()&&!extra&&!isInactive?` <br><span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett</span>`:''}</td>`;
     cols.forEach(c=>{
       const val=getShiftCode(wk,c.idx,p.id,c.servizio);
       const cs=val?shiftColorStyle(val):'';
@@ -2056,7 +2238,7 @@ function renderTurniCorpo(wk,wrap){
           :richPending?'outline:2px solid #f5d76e;outline-offset:-2px;':'';
         const cellTitle=bloc?bloc.testo+' — bloccata':isAvail?'Disponibile':richPending?'Richiesta: '+richPending.turno_richiesto:hasOffReq?'Richiesta giorno libero':'';
         h+=`<td class="shift-cell" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}">
-          ${chiusa?`<span style="display:inline-block;width:66px;font-size:11px;padding:2px 3px;color:${val?shiftTextColor(val):'var(--text)'};font-weight:${val?'600':'400'};">${val||''}</span>`:`
+          ${soloLettura?`<span style="display:inline-block;width:66px;font-size:11px;padding:2px 3px;color:${val?shiftTextColor(val):'var(--text)'};font-weight:${val?'600':'400'};">${val||''}</span>`:`
           <select onchange="setShift(${sKey},this.value)" style="width:66px;font-size:11px;padding:2px 3px;border:none;background:transparent;color:${val?shiftTextColor(val):'var(--text)'};font-family:inherit;font-weight:${val?'600':'400'};">
             <option value="" style="background:#fff;color:#1a1a1a;"></option>
             ${turniSceglibili(val).map(sh=>`<option value="${sh.code}" style="background:#fff;color:#1a1a1a;"${sh.code===val?' selected':''}>${sh.code}</option>`).join('')}
@@ -2065,8 +2247,13 @@ function renderTurniCorpo(wk,wrap){
         h+=`<td class="shift-cell-ro" style="${cs}">${val}</td>`;
       }
     });
+    if(mostraOre){
+      const o=oreSettimanali(wk,p,cols);
+      h+=`<td style="text-align:center;font-variant-numeric:tabular-nums;font-weight:600;font-size:12px;border-left:2px solid var(--border2);background:var(--bg2);${o.ore?'':'color:var(--text3);'}"
+        title="${o.aperto?'Comprende turni che finiscono a chiusura: le ore vere sono di piu\'':'Somma delle ore dei turni, pause escluse'}">${oreSettimanaliTesto(o)}</td>`;
+    }
     h+='</tr>';
-  });
+  }));
   if(isManager()){
     if(REP==='cucina'){
       // Three separate count rows for cucina/pizzeria/plonge
@@ -2084,6 +2271,7 @@ function renderTurniCorpo(wk,wrap){
           }).length;
           h+=`<td>${n||''}</td>`;
         });
+        h+='<td style="border-left:2px solid var(--border2);background:var(--bg3);"></td>';
         h+='</tr>';
       });
     } else {
@@ -2092,11 +2280,25 @@ function renderTurniCorpo(wk,wrap){
         const n=staffPerVista().filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);return code&&!isFuoriServizio(code);}).length;
         h+=`<td>${n||''}</td>`;
       });
+      h+='<td style="border-left:2px solid var(--border2);background:var(--bg3);"></td>';
       h+='</tr>';
     }
+    // Totale delle ore di tutta la squadra in questa settimana
+    let tot=0,totAperto=false;
+    staffPerTurni.forEach(p=>conReparto(isOspite(p)?repOf(p):null,()=>{
+      const o=oreSettimanali(wk,p,cols);tot+=o.ore;if(o.aperto)totAperto=true;
+    }));
+    h+='<tr class="count-row"><td class="scol" style="background:var(--bg3);font-weight:600;">Ore totali</td>';
+    h+=`<td colspan="${cols.length}" style="background:var(--bg3);"></td>`;
+    h+=`<td style="text-align:center;font-variant-numeric:tabular-nums;font-weight:700;border-left:2px solid var(--border2);background:var(--bg3);">${oreTesto(tot)}${totAperto&&tot?'+':''}</td></tr>`;
   }
   h+='</tbody></table>';
-  wrap.innerHTML=barraChiusura(wk)+avvisoSenzaData()+h;
+  const testaOspiti=repDef().conOspiti
+    ?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="font-size:11px;color:var(--text3);">Chi lavora anche in un altro reparto compare qui in sola lettura: i suoi turni si cambiano di l&agrave;.</span>
+        <button class="btn" style="font-size:11px;padding:3px 10px;margin-left:auto;" onclick="apriOspiti()">Chi vedo qui</button>
+      </div>`:'';
+  wrap.innerHTML=barraChiusura(wk)+avvisoSenzaData()+testaOspiti+h+barreOrarieHtml(wk);
 }
 let shiftTimer=null;
 
@@ -3024,12 +3226,12 @@ function renderLegenda(){
   // Le fasce coperte non si spuntano piu' a mano: si ricavano dagli
   // orari del turno (vedi shiftInFascia), perche' lo stesso codice
   // viene usato in giorni con fasce diverse.
-  let h=`<thead><tr><th style="width:20px;"></th><th style="text-align:left;padding:5px 8px;">Codice</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Pranzo</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Cena</th><th style="text-align:left;padding:5px 8px;">Pausa</th><th style="padding:5px 8px;">Ore</th><th style="text-align:left;padding:5px 8px;">Serve</th><th style="text-align:left;min-width:160px;padding:5px 8px;background:#f0e6ff;color:#7e22ce;">Ruoli compatibili</th><th></th></tr></thead><tbody>`;
+  let h=`<thead><tr><th style="width:20px;"></th><th style="text-align:left;padding:5px 8px;">Codice</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Pranzo</th><th style="text-align:left;min-width:110px;padding:5px 8px;">Cena</th><th style="text-align:left;padding:5px 8px;">Pausa</th><th style="padding:5px 8px;">Ore</th><th style="text-align:left;padding:5px 8px;">Serve</th>${ROLES.length?`<th style="text-align:left;min-width:160px;padding:5px 8px;background:#f0e6ff;color:#7e22ce;">Ruoli compatibili</th>`:''}<th></th></tr></thead><tbody>`;
   const righe=G.shifts.map((s,i)=>({s,i}));
   const attivi=righe.filter(r=>!r.s.archiviato), archiviati=righe.filter(r=>r.s.archiviato);
   attivi.forEach(({s,i})=>{h+=legRiga(s,i,false);});
   if(archiviati.length){
-    h+=`<tr><td colspan="9" style="padding:10px 8px 5px;background:var(--bg3);text-align:left;">
+    h+=`<tr><td colspan="${ROLES.length?9:8}" style="padding:10px 8px 5px;background:var(--bg3);text-align:left;">
       <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;">Archiviati (${archiviati.length})</span>
       <span style="font-size:11px;color:var(--text3);margin-left:8px;">Non si possono piu' assegnare, ma restano qui perch&eacute; le settimane passate continuino a leggerli.</span>
     </td></tr>`;
@@ -3054,7 +3256,7 @@ function legRiga(s,i,arch){
       <td style="text-align:center;font-variant-numeric:tabular-nums;color:var(--text2);font-size:12px;">${oreTesto(oreTurno(s))}${oreAperte(s)&&oreTurno(s)?'+':''}</td>
       <td style="font-size:11px;color:var(--text2);white-space:nowrap;">${serveTesto(s)}</td>`;
     const compatRoles=s.compatibleRoles||[];
-    h+=`<td style="padding:3px 6px;background:#f9f3ff;"><div style="display:flex;flex-wrap:wrap;gap:2px;">${ROLES.map(r=>{const on=compatRoles.includes(r);return`<label style="display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;padding:1px 4px;border-radius:3px;background:${on?'#7e22ce':'transparent'};color:${on?'#fff':'var(--text2)'};border:0.5px solid ${on?'#7e22ce':'var(--border)'};"><input type="checkbox" style="display:none;" ${on?'checked':''} onchange="toggleCompatRole(${i},'${r}',this.checked)">${r}</label>`;}).join('')}</div></td>`;
+    if(ROLES.length)h+=`<td style="padding:3px 6px;background:#f9f3ff;"><div style="display:flex;flex-wrap:wrap;gap:2px;">${ROLES.map(r=>{const on=compatRoles.includes(r);return`<label style="display:flex;align-items:center;gap:2px;font-size:10px;cursor:pointer;padding:1px 4px;border-radius:3px;background:${on?'#7e22ce':'transparent'};color:${on?'#fff':'var(--text2)'};border:0.5px solid ${on?'#7e22ce':'var(--border)'};"><input type="checkbox" style="display:none;" ${on?'checked':''} onchange="toggleCompatRole(${i},'${r}',this.checked)">${r}</label>`;}).join('')}</div></td>`;
   h+=arch
     ? `<td style="white-space:nowrap;"><button class="btn" style="font-size:10px;padding:3px 8px;" onclick="archiviaTurno(${i},false)">Ripristina</button></td></tr>`
     : `<td style="white-space:nowrap;">
