@@ -211,6 +211,8 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .tel-fascia-l{flex-grow:1;min-width:0;font-size:10px;letter-spacing:.06em;color:var(--text3);text-transform:uppercase;}
 .tel-fascia-n{font-size:11px;font-weight:600;color:var(--text2);}
 .tel-nota{font-size:11px;color:var(--text3);line-height:1.5;margin-top:6px;}
+.tel-post{width:104px;flex-shrink:0;}
+.tel-post-no{font-size:10px;letter-spacing:.04em;color:var(--text3);text-transform:uppercase;}
 .tel-sez .day-nav{margin-bottom:8px;}
 @media (max-width:860px){
   .app{padding:.6rem;}
@@ -2477,11 +2479,21 @@ function renderFasceTelefono(wk){
        '<span class="tel-fascia-l">'+f.label+'</span>'+
        '<span class="tel-fascia-n">'+gente.length+'</span></div>';
     if(!gente.length)h+='<div class="tel-riga"><span class="tel-ore fiacco">Nessuno</span></div>';
+    // raggruppate per postazione, nell'ordine dei ruoli del reparto
+    const perRuolo={},senza=[];
     gente.forEach(function(q){
       const r=(wk.role_assign||{})[di+'_'+f.id+'_'+q.id]||'';
-      h+='<div class="tel-riga"><span class="tel-nome">'+q.name+'</span>'+
-         (r?'<span class="tel-ruolo">'+r+'</span>':'')+'</div>';
+      if(r){(perRuolo[r]=perRuolo[r]||[]).push(q.name);}else senza.push(q.name);
     });
+    const ruoli=ruoliPerVista().filter(r=>perRuolo[r]);
+    Object.keys(perRuolo).forEach(function(r){if(ruoli.indexOf(r)<0)ruoli.push(r);});
+    ruoli.forEach(function(r){
+      h+='<div class="tel-riga"><span class="tel-post"><span class="tel-ruolo">'+r+'</span></span>'+
+         '<span class="tel-nome">'+perRuolo[r].join(', ')+'</span></div>';
+    });
+    if(senza.length)
+      h+='<div class="tel-riga"><span class="tel-post"><span class="tel-post-no">Da assegnare</span></span>'+
+         '<span class="tel-nome" style="color:var(--text3);font-weight:400;">'+senza.join(', ')+'</span></div>';
     h+='</div>';
   });
   box.innerHTML=h||'<p class="tel-nota">Nessuna fascia per questo giorno.</p>';
