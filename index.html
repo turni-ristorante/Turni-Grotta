@@ -166,6 +166,52 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .nav-dot{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:20px;background:#dc2626;color:#fff;font-size:9px;font-weight:700;}
 
 /* ===== SCHERMI PICCOLI ===== */
+
+/* === INTESTAZIONI BLOCCATE: nomi a sinistra e giorni in alto restano fermi === */
+.wrap-fisso{max-height:min(70vh,640px);overflow:auto;-webkit-overflow-scrolling:touch;}
+.wrap-fisso thead th{position:sticky;top:0;z-index:3;box-shadow:0 1px 0 var(--border);}
+.wrap-fisso thead tr:first-child th{height:28px;}
+.wrap-fisso thead tr:nth-child(2) th{top:28px;}
+.wrap-fisso th.scol{left:0;z-index:6;box-shadow:1px 1px 0 var(--border);}
+.wrap-fisso td.scol{z-index:2;box-shadow:1px 0 0 var(--border);}
+
+/* === VISTE DA TELEFONO (solo operatore, sotto gli 860px) === */
+.solo-telefono{display:none;}
+.tel-sez{margin-bottom:1rem;}
+.tel-occhiello{font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--text2);text-transform:uppercase;margin-bottom:6px;}
+.tel-card{background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
+.tel-oggi-top{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+.tel-oggi-eti{font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--blue-text);}
+.tel-oggi-data{font-size:12px;color:var(--text2);}
+.tel-oggi-riga{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.tel-sigla-g{font-size:26px;font-weight:700;padding:6px 13px;border-radius:9px;line-height:1.1;}
+.tel-ora-g{font-size:26px;font-weight:700;letter-spacing:-.5px;line-height:1.15;}
+.tel-pausa{margin-top:10px;font-size:13px;color:var(--text2);}
+.tel-dove{margin-top:12px;padding-top:10px;border-top:0.5px solid var(--border);}
+.tel-dove-r{display:flex;align-items:center;gap:10px;padding:4px 0;}
+.tel-dove-o{width:100px;flex-shrink:0;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;}
+.tel-dove-l{flex-grow:1;min-width:0;font-size:10px;letter-spacing:.06em;color:var(--text3);text-transform:uppercase;}
+.tel-ruolo{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--blue-bg);color:var(--blue-text);white-space:nowrap;}
+.tel-lista{background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+.tel-riga{display:flex;align-items:center;gap:10px;padding:8px 11px;border-bottom:0.5px solid var(--border);}
+.tel-riga:last-child{border-bottom:none;}
+.tel-riga.oggi{background:var(--blue-bg);}
+.tel-gg{width:56px;flex-shrink:0;font-size:12px;color:var(--text2);}
+.tel-gg em{display:block;font-style:normal;font-size:10px;color:var(--text3);}
+.tel-riga.oggi .tel-gg{font-weight:700;color:var(--blue-text);}
+.tel-sigla{width:58px;flex-shrink:0;text-align:center;font-size:13px;font-weight:700;padding:5px 0;border-radius:6px;}
+.tel-sigla.vuota{background:var(--bg3);color:var(--text3);}
+.tel-ore{flex-grow:1;min-width:0;font-size:13px;font-variant-numeric:tabular-nums;}
+.tel-ore em{display:block;font-style:normal;font-size:10px;color:var(--text2);margin-top:1px;}
+.tel-ore.fiacco{color:var(--text2);font-variant-numeric:normal;}
+.tel-nome{flex-grow:1;min-width:0;font-size:13px;font-weight:500;}
+.tel-fascia{background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:8px;}
+.tel-fascia-t{display:flex;align-items:center;gap:8px;padding:7px 11px;background:var(--bg3);border-bottom:0.5px solid var(--border);}
+.tel-fascia-o{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;}
+.tel-fascia-l{flex-grow:1;min-width:0;font-size:10px;letter-spacing:.06em;color:var(--text3);text-transform:uppercase;}
+.tel-fascia-n{font-size:11px;font-weight:600;color:var(--text2);}
+.tel-nota{font-size:11px;color:var(--text3);line-height:1.5;margin-top:6px;}
+.tel-sez .day-nav{margin-bottom:8px;}
 @media (max-width:860px){
   .app{padding:.6rem;}
   /* la legenda va sotto la griglia, non di fianco */
@@ -201,6 +247,11 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
   .fab-grid-wrap{grid-template-columns:1fr;}
   .config-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));}
   .pref-roles-grid{grid-template-columns:1fr;}
+}
+@media (max-width:860px){
+  .solo-telefono{display:block;}
+  .sec.dip .main-with-sidebar{display:none;}
+  .sec.dip .color-legend{display:none;}
 }
 @media (max-width:430px){
   .scol{min-width:74px;font-size:11px;}
@@ -360,6 +411,17 @@ let ALL_FASCE=REPARTI[REP_DEFAULT].fasce;// fasce in uso oggi
 // id a una fascia, anche quando l'id viene da una settimana vecchia.
 let FASCE_TUTTE=ALL_FASCE.concat(REPARTI[REP_DEFAULT].fasceLegacy||[]);
 function repDef(r){return REPARTI[r||REP]||REPARTI[REP_DEFAULT];}
+// Quali reparti puo' aprire chi e' collegato. Il responsabile li vede
+// tutti; un manager di reparto vede il suo e in piu' il Management,
+// perche' li' c'e' chi fa management anche quando lavora altrove.
+function repartiVisibili(){
+  if(!isManager())return[REP];
+  if(isResponsabile())return Object.keys(REPARTI);
+  const mio=(currentManager&&currentManager.reparto)||REP_DEFAULT;
+  const out=[mio];
+  Object.keys(REPARTI).forEach(k=>{if(REPARTI[k].conOspiti&&k!==mio)out.push(k);});
+  return out;
+}
 // Le fasce si cercano SEMPRE per id, mai per posizione nell'array.
 // Cosi' aggiungere o togliere una fascia non rinumera le altre e non
 // richiede di rimappare i turni gia' salvati nel database.
@@ -874,6 +936,58 @@ async function dbSaveConfig(k,v){try{const val=typeof v==='string'?v:JSON.string
 function setSyncStatus(s){syncStatus=s;const el=document.getElementById('sync-status');if(el){el.textContent=s==='ok'?'● Sincronizzato':'● Errore';el.className='sync-status '+(s==='ok'?'ok':'err');}}
 function emptyWeek(name){return{id:'w'+Date.now()+Math.random().toString(36).slice(2,6),name:name||'Nuova settimana',published:false,published_rep:{},day_config:['cena','cena','cena','cena','cena','cena','cena'],shift_assign:{},role_assign:{},selected_day:0};}
 function curWeek(){return G.weeks.find(w=>w.id===G.currentWeekId)||G.weeks[0];}
+
+// ===== SETTIMANA TIPO E CREAZIONE AL VOLO =====
+// Le settimane non si creano piu' a mano da un elenco: si clicca un
+// rigo del calendario e, se quella settimana non esiste ancora, nasce
+// in quel momento con le aperture della settimana tipo. Non le creo
+// tutte in anticipo perche' sarebbero centinaia di righe vuote da
+// trascinarsi per sempre in ogni elenco, archivio e conteggio.
+const SETTIMANA_TIPO_DEFAULT=['cena','cena','cena','cena','cena','cena','pranzo_cena'];
+function settimanaTipo(){
+  const row=(G.rawConfig||[]).find(x=>x.key==='settimanaTipo');
+  if(!row||!row.value)return SETTIMANA_TIPO_DEFAULT.slice();
+  try{
+    const v=JSON.parse(row.value);
+    return(Array.isArray(v)&&v.length===7)?v:SETTIMANA_TIPO_DEFAULT.slice();
+  }catch(e){return SETTIMANA_TIPO_DEFAULT.slice();}
+}
+// Il lunedi della settimana che contiene quella data
+function lunediDi(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  const dow=d.getDay()===0?6:d.getDay()-1;
+  d.setDate(d.getDate()-dow);
+  return dateToStr(d);
+}
+// Nome leggibile: "16-22 nov", oppure "28 set - 4 ott" se cambia mese
+function nomeSettimana(lunedi){
+  const a=new Date(lunedi+'T12:00:00');
+  const b=new Date(a);b.setDate(b.getDate()+6);
+  const m=i=>MONTHS_IT[i].slice(0,3);
+  return a.getMonth()===b.getMonth()
+    ?`${a.getDate()}-${b.getDate()} ${m(a.getMonth())}`
+    :`${a.getDate()} ${m(a.getMonth())} - ${b.getDate()} ${m(b.getMonth())}`;
+}
+function settimanaConInizio(lunedi){return G.weeks.find(w=>w.startDate===lunedi)||null;}
+async function apriSettimana(lunedi){
+  lunedi=lunediDi(lunedi);
+  let wk=settimanaConInizio(lunedi);
+  if(!wk){
+    wk=emptyWeek(nomeSettimana(lunedi));
+    wk.startDate=lunedi;
+    wk.day_config=settimanaTipo();
+    G.weeks.push(wk);
+    try{await sb.from('weeks').insert(weekToDb(wk));setSyncStatus('ok');}
+    catch(e){
+      console.error('creazione settimana:',e);setSyncStatus('err');
+      G.weeks=G.weeks.filter(w=>w.id!==wk.id);
+      alert('Non sono riuscito a creare la settimana: '+(e.message||e));return;
+    }
+  }
+  chiudiCalendario();
+  await switchWeek(wk.id);
+  goTab('turni');
+}
 // ===== SETTIMANE CHIUSE =====
 // Una settimana finita si puo' CHIUDERE: accanto a lei si salva una
 // copia di tutto cio' che serve a ridisegnarla (turni con orari e
@@ -1271,10 +1385,13 @@ function renderApp(){
   document.getElementById('app').innerHTML=`
     <div class="topbar">
       <span class="role-badge ${role}">${isManager()?(currentManager?currentManager.name:'Manager'):'Operatore'}</span>
-      ${isResponsabile()
-        ?`<select class="week-selector" id="rep-selector" title="Reparto" onchange="switchReparto(this.value)" style="max-width:170px;">${Object.keys(REPARTI).map(k=>`<option value="${k}"${k===REP?' selected':''}>${REPARTI[k].label}</option>`).join('')}</select>`
-        :`<span class="role-badge" style="background:var(--bg3);color:var(--text2);">${repLabel()}</span>`}
-      ${isManager()?`<select class="week-selector" id="week-selector" onchange="switchWeek(this.value)"></select>
+      ${(()=>{
+        const visibili=repartiVisibili();
+        return visibili.length>1
+          ?`<select class="week-selector" id="rep-selector" title="Reparto" onchange="switchReparto(this.value)" style="max-width:170px;">${visibili.map(k=>`<option value="${k}"${k===REP?' selected':''}>${REPARTI[k].label}</option>`).join('')}</select>`
+          :`<span class="role-badge" style="background:var(--bg3);color:var(--text2);">${repLabel()}</span>`;
+      })()}
+      ${isManager()?`<button class="week-selector" id="week-btn" onclick="apriCalendario()" title="Scegli la settimana dal calendario" style="cursor:pointer;text-align:left;"></button>
         <button class="btn primary" style="font-size:11px;padding:4px 10px;" onclick="goTab('settimane')">Settimane</button>`
       :`<select class="week-selector" id="week-selector-dep" onchange="switchWeekDep(this.value)" style="max-width:220px;"></select>`}
       <span id="sync-status" class="sync-status ${syncStatus==='ok'?'ok':'err'}">${syncStatus==='ok'?'● Sincronizzato':'● ...'}</span>
@@ -1285,26 +1402,29 @@ function renderApp(){
       <button class="btn" style="font-size:11px;padding:4px 10px;margin-left:auto;" onclick="logout()">Esci</button>
     </div>
     <nav id="main-nav"></nav>
-    <div id="sec-turni" class="sec active">
+    <div id="sec-turni" class="sec active${isManager()?'':' dip'}">
       <div class="color-legend">
         <span style="font-size:11px;font-weight:500;color:var(--text2);margin-right:4px;">Turni:</span>
         ${colorLegendHtml()}
         ${isManager()?`<button class="btn" style="font-size:11px;padding:4px 10px;" onclick="exportPDF()">&#128196; Esporta PDF</button>
           <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openCompare()">&#128065; Confronta</button>
           ${repDef().senzaGiornaliero?'':`<button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="apriFab()">&#128203; Fabbisogno</button>`}
+          <button class="btn" id="pub-btn" style="font-size:11px;padding:4px 12px;font-weight:600;" onclick="pubblicaSettimanaAttiva()"></button>
           ${repDef().senzaGiornaliero?'':`<button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>`}
         <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="doUndo()" title="Annulla ultima modifica">↩ Annulla</button>
         <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="clearWeek()" title="Svuota tutti i turni della settimana">🗑 Pulisci settimana</button>`:''}
       </div>
       <div id="draft-panel" class="draft-panel" style="display:none;"><span>📋 Hai una bozza salvata per questa settimana</span><button class="btn purple" style="font-size:11px;padding:4px 10px;" onclick="restoreDraft()">Ripristina bozza</button></div>
       <div id="draft-alerts"></div>
+      ${isManager()?'':'<div id="vista-telefono" class="solo-telefono"></div>'}
       <div class="main-with-sidebar">
-        <div class="main-content"><div class="wrap" id="turni-wrap"></div></div>
+        <div class="main-content"><div class="wrap wrap-fisso" id="turni-wrap"></div></div>
         <div class="leg-sidebar"><h4>Legenda</h4><div id="leg-sidebar-turni"></div></div>
       </div>
     </div>
-    <div id="sec-giornaliero" class="sec">
+    <div id="sec-giornaliero" class="sec${isManager()?'':' dip'}">
       <div class="day-nav" id="day-nav"></div>
+      ${isManager()?'':'<div id="fasce-telefono" class="solo-telefono"></div>'}
       ${isManager()?`<div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap;align-items:center;">
         <button class="btn primary" style="font-size:11px;padding:4px 12px;" onclick="autoFillRoles()">&#10022; Compila ruoli automaticamente</button>
         <button class="btn success" style="font-size:11px;padding:4px 12px;font-weight:600;" onclick="saveAll()">&#128190; Salva ruoli</button>
@@ -1406,6 +1526,14 @@ function renderApp(){
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Configura apertura per la settimana attiva.</p>
       <div class="config-grid" id="config-grid"></div>
       <button class="btn primary" onclick="saveConfig()">Salva</button>
+      <hr style="border:none;border-top:0.5px solid var(--border);margin:1.75rem 0 1.25rem;">
+      <p style="font-size:13px;font-weight:500;margin-bottom:4px;">Settimana tipo</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">Le settimane nuove nascono con queste aperture. Non tocca le settimane che esistono gi&agrave;.</p>
+      <div class="config-grid" id="tipo-grid"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn primary" onclick="salvaSettimanaTipo()">Salva settimana tipo</button>
+        <button class="btn" onclick="copiaDaSettimanaAttiva()">Copia dalla settimana attiva</button>
+      </div>
     </div>
     <!-- ARCHIVIO VERSIONI -->
     <!-- STAFF ARCHIVIATO -->
@@ -1446,19 +1574,9 @@ function renderApp(){
 
     <!-- SETTIMANE -->
     <div id="sec-settimane" class="sec">
-      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Gestisci le settimane. Pubblica per renderle visibili agli operatori.</p>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;">Le settimane nascono da sole cliccandole nel calendario: non c'&egrave; da crearle a mano. Si pubblicano dalla pagina dei turni.</p>
       <div style="display:flex;gap:8px;margin-bottom:1.25rem;flex-wrap:wrap;align-items:flex-end;">
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <label style="font-size:11px;color:var(--text2);">Lunedì di inizio settimana</label>
-          <input type="date" id="new-week-date" onchange="updateWeekNameFromDate()"
-            style="padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <label style="font-size:11px;color:var(--text2);">Nome settimana</label>
-          <input type="text" id="new-week-name" placeholder="generato automaticamente" style="width:200px;padding:5px 9px;border-radius:var(--radius);border:0.5px solid var(--border2);background:#fff;color:var(--text);font-size:12px;font-family:inherit;">
-        </div>
-        <button class="btn primary" onclick="createWeek(false)">+ Nuova vuota</button>
-        <button class="btn warn" onclick="createWeek(true)">+ Duplica attiva</button>
+        <button class="btn warn" onclick="createWeek(true)">Duplica la settimana attiva</button>
       </div>
       <div id="week-calendar"></div>
       <div id="week-active" style="margin-top:1.25rem;"></div>
@@ -1671,7 +1789,7 @@ function colorLegendHtml(){
 }
 
 async function switchReparto(r){
-  if(!isResponsabile())return;
+  if(!repartiVisibili().includes(r))return;
   if(r===REP)return;
   if(typeof isDirty!=='undefined'&&isDirty){
     if(!confirm('Hai modifiche non salvate su '+repLabel()+'.\n\nCambiando reparto le perdi. Continuare?')){
@@ -1716,6 +1834,12 @@ function renderLegSidebar(filter){
 
 function renderWeekSelector(){
   if(!isManager())return;
+  const btn=document.getElementById('week-btn');
+  if(btn){
+    const wk=curWeek();
+    btn.innerHTML=wk?`\u{1F4C5} ${wk.name}${isPublished(wk)?' \u2713':''}`:'\u{1F4C5} Scegli la settimana';
+  }
+  aggiornaBottonePubblica();
   const sel=document.getElementById('week-selector');if(!sel)return;
   const sorted=[...G.weeks].sort((a,b)=>{
     if(a.startDate&&b.startDate)return b.startDate.localeCompare(a.startDate);
@@ -1821,13 +1945,35 @@ async function deleteWeek(id){
   renderWeekSelector();renderWeekList();renderTurni();
 }
 async function renameWeek(id,name){const w=G.weeks.find(w=>w.id===id);if(!w)return;w.name=name;await dbSaveWeek(w,{changes:['name']});renderWeekSelector();}
+// Il tasto nella barra dei turni: dice sempre com'e' adesso, non cosa
+// farebbe il clic, cosi' si legge lo stato a colpo d'occhio.
+function aggiornaBottonePubblica(){
+  const b=document.getElementById('pub-btn');if(!b)return;
+  const w=curWeek();
+  if(!w){b.style.display='none';return;}
+  b.style.display='';
+  const pub=isPublished(w,REP);
+  b.innerHTML=pub?'\u{1F441} Pubblicata':'\u270E Bozza';
+  b.title=pub?'Lo staff di '+repLabel()+' vede questi turni. Clicca per nasconderli.'
+             :'Lo staff di '+repLabel()+' non vede ancora questi turni. Clicca per pubblicarli.';
+  b.style.background=pub?'var(--green-bg)':'var(--bg3)';
+  b.style.borderColor=pub?'var(--green-border)':'var(--border2)';
+  b.style.color=pub?'var(--green-text)':'var(--text2)';
+}
+async function pubblicaSettimanaAttiva(){
+  const w=curWeek();if(!w)return;
+  return togglePublish(w.id);
+}
 async function togglePublish(id){
   const w=G.weeks.find(w=>w.id===id);if(!w)return;
   const nuovo=!isPublished(w,REP);
-  if(!confirm((nuovo?'Pubblicare':'Nascondere')+' i turni di '+repLabel()+' per "'+w.name+'"?\n\nRiguarda solo '+repLabel()+': gli altri reparti restano come sono.'))return;
+  const avviso=nuovo
+    ?'PUBBLICARE i turni di '+repLabel()+' per "'+w.name+'"?\n\nDa questo momento lo staff di '+repLabel()+' li vedr\u00e0.'
+    :'NASCONDERE i turni di '+repLabel()+' per "'+w.name+'"?\n\nLo staff di '+repLabel()+' non li vedr\u00e0 piu\'.';
+  if(!confirm(avviso+'\n\nRiguarda solo '+repLabel()+': gli altri reparti restano come sono.'))return;
   setPublished(w,REP,nuovo);
   await dbSaveWeek(w);
-  renderWeekList();renderWeekSelector();
+  renderWeekList();renderWeekSelector();aggiornaBottonePubblica();
 }
 async function dupWeekFrom(id){
   const name=prompt('Nome per la copia:','');if(!name)return;
@@ -1996,7 +2142,9 @@ function settimanaDelGiorno(dateStr){
 }
 
 function renderWeekCalendar(){
-  const el=document.getElementById('week-calendar');if(!el)return;
+  const dove=['week-calendar','week-calendar-popup'].map(i=>document.getElementById(i)).filter(Boolean);
+  if(!dove.length)return;
+  const el={set innerHTML(v){dove.forEach(d=>{d.innerHTML=v;});}};
   const oggi=new Date();
   if(window._wkCalMese===undefined)window._wkCalMese=oggi.getMonth();
   if(window._wkCalAnno===undefined)window._wkCalAnno=oggi.getFullYear();
@@ -2009,7 +2157,7 @@ function renderWeekCalendar(){
       <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="cambiaMeseCal(1)">&#8250;</button>
       <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="window._wkCalMese=${oggi.getMonth()};window._wkCalAnno=${oggi.getFullYear()};renderWeekCalendar()">Oggi</button>
     </div>
-    <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">Clicca una settimana per aprirla. Le righe grigie non hanno ancora una settimana creata.</p>`;
+    <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">Clicca una settimana per aprirla. Quelle grigie non esistono ancora: nascono al clic, con le aperture della settimana tipo.</p>`;
 
   const giorniMese=new Date(anno,mese+1,0).getDate();
   // Raggruppa i giorni del mese per settimana (lunedi -> domenica)
@@ -2042,8 +2190,10 @@ function renderWeekCalendar(){
     if(attiva){bg='var(--blue-bg)';border='var(--blue-border)';}
     else if(pubbl){bg='var(--green-bg)';border='var(--green-border)';}
     else if(wk){bg='#fff';border='var(--border2)';}
-    const azione=wk?`onclick="switchWeek('${wk.id}');goTab('turni')"`:'';
-    const etichetta=wk?(wk.name+(attiva?' • attiva':pubbl?' • pubblicata':' • bozza')):'nessuna settimana';
+    // Anche le settimane che non esistono si possono aprire: nascono al clic
+    const lunedi=primo?lunediDi(primo.dateStr):null;
+    const azione=lunedi?`onclick="apriSettimana('${lunedi}')"`:'';
+    const etichetta=wk?(wk.name+(attiva?' • attiva':pubbl?' • pubblicata':' • bozza')):'da creare';
     html+=`<div ${azione} style="display:flex;align-items:center;gap:8px;border:0.5px solid ${border};background:${bg};border-radius:6px;padding:5px 8px;margin-bottom:4px;cursor:${wk?'pointer':'default'};">
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;flex:1;">
         ${r.giorni.map(x=>x?`<div style="text-align:center;font-size:11px;font-weight:${x.dateStr===oggiStr?'700':'400'};color:${x.dateStr===oggiStr?'var(--blue-text)':'var(--text)'};">${x.n}</div>`:'<div></div>').join('')}
@@ -2056,6 +2206,23 @@ function renderWeekCalendar(){
   el.innerHTML=html;
 }
 
+// Il calendario come porta d'ingresso alle settimane, al posto
+// dell'elenco a tendina: si apre sopra la pagina e si chiude da solo
+// appena scegli una settimana.
+function apriCalendario(){
+  if(document.getElementById('cal-overlay'))return;
+  const el=document.createElement('div');
+  el.id='cal-overlay';
+  el.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:700;display:flex;align-items:flex-start;justify-content:center;padding:70px 12px 20px;';
+  el.onclick=e=>{if(e.target===el)chiudiCalendario();};
+  el.innerHTML=`<div style="width:620px;max-width:95vw;max-height:85vh;overflow:auto;">
+    <div id="week-calendar-popup"></div>
+    <div style="text-align:right;margin-top:8px;"><button class="btn" onclick="chiudiCalendario()">Chiudi</button></div>
+  </div>`;
+  document.body.appendChild(el);
+  renderWeekCalendar();
+}
+function chiudiCalendario(){document.getElementById('cal-overlay')?.remove();}
 function cambiaMeseCal(delta){
   let m=window._wkCalMese+delta,a=window._wkCalAnno;
   if(m<0){m=11;a--;}else if(m>11){m=0;a++;}
@@ -2126,12 +2293,207 @@ function personInFascia(wk,di,pid,fasciaObj,tipo){
 }
 
 // ===== TURNI =====
+// ===== VISTE DA TELEFONO (operatore) =====
+// Dal telefono la griglia settimanale non si legge: al suo posto
+// l'operatore vede il turno di oggi in grande, la propria settimana
+// e, giorno per giorno, chi altro c'e'. Sopra gli 860px (iPad e
+// computer) resta tutto com'era: la griglia.
+const GIORNI_BREVI=['lun','mar','mer','gio','ven','sab','dom'];
+// Il giorno scelto in "chi c'e'" parte da oggi; poi comanda l'operatore.
+let telGiorno=null;
+function orarioLeggibile(s,e){
+  if(!s||!e)return'';
+  return /^c$/i.test(String(e).trim())?(s+' &ndash; chiusura'):(s+' &ndash; '+e);
+}
+function orariTurno(sh){
+  if(!sh||sh.is_off||sh.is_ferie)return[];
+  const out=[];
+  if(sh.s1&&sh.e1)out.push(orarioLeggibile(sh.s1,sh.e1));
+  if(sh.s2&&sh.e2)out.push(orarioLeggibile(sh.s2,sh.e2));
+  return out;
+}
+// "Pausa cena 18:30 - 19:00" oppure "Nessuna pausa cena".
+// Se il turno copre pranzo e cena la pausa non si qualifica.
+function pausaTesto(sh){
+  if(!sh||sh.is_off||sh.is_ferie)return'';
+  const sv=serviziTurno(sh);
+  if(!sv.pranzo&&!sv.cena)return'';
+  const q=(sv.pranzo&&sv.cena)?'':(sv.cena?' cena':' pranzo');
+  const p=String(sh.pausa||'').trim();
+  if(p&&p.indexOf('/')>0)return'Pausa'+q+' '+p.split('/').join(' &ndash; ');
+  return'Nessuna pausa'+q;
+}
+// I turni di una persona in un giorno: uno solo, o pranzo e cena.
+function codiciGiorno(wk,di,pid){
+  const tipo=wk.day_config[di];
+  if(tipo==='chiuso')return[];
+  if(tipo==='pranzo_cena'){
+    return[['Pranzo',getShiftCode(wk,di,pid,'pranzo')],['Cena',getShiftCode(wk,di,pid,'cena')]]
+      .filter(x=>!!x[1]);
+  }
+  const c=getShiftCode(wk,di,pid,null);
+  return c?[['',c]]:[];
+}
+function giorniAperti(wk){
+  return DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:wk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
+}
+function indiceOggi(wk){
+  const d=getWeekDates(wk);if(!d)return-1;
+  const oggi=dateToStr(new Date());
+  for(let i=0;i<7;i++)if(dateToStr(d[i])===oggi)return i;
+  return-1;
+}
+function numeroGiorno(wk,di){const d=getWeekDates(wk);return d?(' '+d[di].getDate()):'';}
+function inizioTurno(code){
+  const sh=getShift(code);if(!sh)return 9999;
+  const m=minuti(sh.s1||sh.s2||'');
+  return(m===null?9999:m);
+}
+function selGiornoTel(i){
+  const wk=getDepWeek();if(!wk)return;
+  wk.selected_day=i;
+  renderTurni();
+  if(document.getElementById('day-nav'))renderDayNav();
+}
+function renderVistaTelefono(wk){
+  const box=document.getElementById('vista-telefono');
+  if(!box||isManager()||!currentDipendente||!wk)return;
+  const p=currentDipendente;
+  const giorni=giorniAperti(wk);
+  const oggi=indiceOggi(wk);
+  const primo=(oggi>=0?oggi:(giorni[0]?giorni[0].idx:0));
+  if(!telGiorno||telGiorno!==wk.id){telGiorno=wk.id;wk.selected_day=primo;}
+  if(!giorni.find(d=>d.idx===wk.selected_day))wk.selected_day=primo;
+  let h='';
+
+  // --- il turno di oggi, in grande ---
+  const di=(oggi>=0)?oggi:(giorni[0]?giorni[0].idx:0);
+  const codici=codiciGiorno(wk,di,p.id);
+  h+='<div class="tel-sez"><div class="tel-card">';
+  h+='<div class="tel-oggi-top"><span class="tel-oggi-eti">'+(oggi>=0?'OGGI':'INIZIO SETTIMANA')+'</span>'+
+     '<span class="tel-oggi-data">'+DAY_NAMES[di].toLowerCase()+numeroGiorno(wk,di)+'</span></div>';
+  if(!codici.length){
+    h+='<div class="tel-oggi-riga"><span class="tel-ora-g" style="color:var(--text3);">Nessun turno</span></div>';
+  }else{
+    codici.forEach(function(c,k){
+      const et=c[0],code=c[1],sh=getShift(code),fuori=isFuoriServizio(code);
+      const ore=fuori?((sh&&sh.is_ferie)?'In ferie':'Riposo'):orariTurno(sh).join('<br>');
+      h+='<div class="tel-oggi-riga"'+(k?' style="margin-top:12px;"':'')+'>'+
+         '<span class="tel-sigla-g" style="'+shiftColorStyle(code)+'">'+code+'</span>'+
+         '<span class="tel-ora-g">'+(ore||'&mdash;')+'</span>'+
+         (et&&!fuori?'<span class="tel-dove-l" style="flex-grow:0;">'+et+'</span>':'')+'</div>';
+      if(!fuori){const pt=pausaTesto(sh);if(pt)h+='<div class="tel-pausa">'+pt+'</div>';}
+    });
+    // --- dove sei: le fasce coperte, con la postazione se assegnata ---
+    const tipo=wk.day_config[di];
+    const fasce=fasceDelGiorno(wk,di).filter(f=>personInFascia(wk,di,p.id,f,tipo));
+    if(fasce.length){
+      h+='<div class="tel-dove"><div class="tel-occhiello">Dove sei</div>';
+      fasce.forEach(function(f){
+        const r=(wk.role_assign||{})[di+'_'+f.id+'_'+p.id]||'';
+        h+='<div class="tel-dove-r"><span class="tel-dove-o">'+String(f.orario||'').replace('/',' &ndash; ')+'</span>'+
+           '<span class="tel-dove-l">'+f.label+'</span>'+
+           (r?'<span class="tel-ruolo">'+r+'</span>':'')+'</div>';
+      });
+      h+='</div>';
+    }
+  }
+  h+='</div></div>';
+
+  // --- la mia settimana ---
+  h+='<div class="tel-sez"><div class="tel-occhiello">La tua settimana</div><div class="tel-lista">';
+  giorni.forEach(function(d){
+    const cs=codiciGiorno(wk,d.idx,p.id);
+    const eti=GIORNI_BREVI[d.idx]+numeroGiorno(wk,d.idx);
+    if(!cs.length){
+      h+='<div class="tel-riga'+(d.idx===oggi?' oggi':'')+'"><span class="tel-gg">'+eti+'</span>'+
+         '<span class="tel-sigla vuota">&mdash;</span><span class="tel-ore fiacco">Non assegnato</span></div>';
+      return;
+    }
+    cs.forEach(function(c,k){
+      const code=c[1],sh=getShift(code),fuori=isFuoriServizio(code);
+      const ore=fuori?((sh&&sh.is_ferie)?'In ferie':'Riposo'):orariTurno(sh).join(' &middot; ');
+      const pt=fuori?'':pausaTesto(sh);
+      h+='<div class="tel-riga'+(d.idx===oggi?' oggi':'')+'">'+
+         '<span class="tel-gg">'+(k?'':eti)+(c[0]?'<em>'+c[0]+'</em>':'')+'</span>'+
+         '<span class="tel-sigla" style="'+shiftColorStyle(code)+'">'+code+'</span>'+
+         '<span class="tel-ore'+(fuori?' fiacco':'')+'">'+(ore||'&mdash;')+
+         (pt&&pt.indexOf('Nessuna')!==0?'<em>'+pt+'</em>':'')+'</span></div>';
+    });
+  });
+  h+='</div></div>';
+
+  // --- chi c'e', un giorno alla volta ---
+  h+='<div class="tel-sez"><div class="tel-occhiello">Chi c\'&egrave;</div>';
+  h+='<div class="day-nav">'+giorni.map(function(d){
+      return'<button class="day-btn '+(d.tipo==='pranzo_cena'?'pc ':'')+(d.idx===wk.selected_day?'active':'')+
+        '" onclick="selGiornoTel('+d.idx+')">'+GIORNI_BREVI[d.idx]+numeroGiorno(wk,d.idx)+'</button>';
+    }).join('')+'</div>';
+  const ds=wk.selected_day;
+  const dentro=[],fuoriServizio=[];
+  personePerVista().forEach(function(q){
+    conReparto(isOspite(q)?repOf(q):null,function(){
+      const cs=codiciGiorno(wk,ds,q.id);
+      if(!cs.length)return;
+      const attivi=cs.filter(c=>!isFuoriServizio(c[1]));
+      if(attivi.length)attivi.forEach(c=>dentro.push({p:q,code:c[1],ini:inizioTurno(c[1]),
+        ore:orariTurno(getShift(c[1])).join(' &middot; ')}));
+      else fuoriServizio.push({p:q,code:cs[0][1],ferie:!!(getShift(cs[0][1])||{}).is_ferie});
+    });
+  });
+  dentro.sort(function(a,b){return a.ini-b.ini||a.p.name.localeCompare(b.p.name);});
+  h+='<div class="tel-occhiello" style="margin-top:4px;">'+DAY_NAMES[ds]+numeroGiorno(wk,ds)+
+     ' &middot; '+dentro.length+' in servizio</div>';
+  h+='<div class="tel-lista">';
+  if(!dentro.length)h+='<div class="tel-riga"><span class="tel-ore fiacco">Nessun turno inserito.</span></div>';
+  dentro.forEach(function(x){
+    h+='<div class="tel-riga"><span class="tel-nome">'+x.p.name+'</span>'+
+       '<span class="tel-ore" style="flex-grow:0;">'+(x.ore||'&mdash;')+'</span>'+
+       '<span class="tel-sigla" style="'+shiftColorStyle(x.code)+'">'+x.code+'</span></div>';
+  });
+  h+='</div>';
+  if(fuoriServizio.length){
+    h+='<div class="tel-lista" style="margin-top:8px;">';
+    fuoriServizio.forEach(function(x){
+      h+='<div class="tel-riga"><span class="tel-nome" style="color:var(--text3);font-weight:400;">'+x.p.name+'</span>'+
+         '<span class="tel-ore fiacco" style="flex-grow:0;">'+(x.ferie?'In ferie':'Riposo')+'</span></div>';
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+  box.innerHTML=h;
+}
+// Il giornaliero dal telefono: una fascia alla volta, con chi c'e' e dove.
+function renderFasceTelefono(wk){
+  const box=document.getElementById('fasce-telefono');
+  if(!box||isManager()||!wk)return;
+  const di=wk.selected_day,tipo=wk.day_config[di];
+  const fasce=fasceDelGiorno(wk,di);
+  let h='';
+  fasce.forEach(function(f){
+    const gente=personePerVista().filter(q=>personInFascia(wk,di,q.id,f,tipo));
+    h+='<div class="tel-fascia"><div class="tel-fascia-t">'+
+       '<span class="tel-fascia-o">'+String(f.orario||'').replace('/',' &ndash; ')+'</span>'+
+       '<span class="tel-fascia-l">'+f.label+'</span>'+
+       '<span class="tel-fascia-n">'+gente.length+'</span></div>';
+    if(!gente.length)h+='<div class="tel-riga"><span class="tel-ore fiacco">Nessuno</span></div>';
+    gente.forEach(function(q){
+      const r=(wk.role_assign||{})[di+'_'+f.id+'_'+q.id]||'';
+      h+='<div class="tel-riga"><span class="tel-nome">'+q.name+'</span>'+
+         (r?'<span class="tel-ruolo">'+r+'</span>':'')+'</div>';
+    });
+    h+='</div>';
+  });
+  box.innerHTML=h||'<p class="tel-nota">Nessuna fascia per questo giorno.</p>';
+}
+
 function renderTurni(){
   const wk=isManager()?curWeek():getDepWeek();
   const wrap=document.getElementById('turni-wrap');
   if(!wk){wrap.innerHTML='<p style="color:var(--text2);padding:1rem;">Nessuna settimana disponibile.</p>';return;}
   if(!isManager()){const el=document.getElementById('dep-week-label');if(el)el.textContent=wk.name;}
-  return conIstantanea(wk,()=>renderTurniCorpo(wk,wrap));
+  aggiornaBottonePubblica();
+  return conIstantanea(wk,()=>{renderVistaTelefono(wk);return renderTurniCorpo(wk,wrap);});
 }
 // La fascetta in cima alla settimana: chiusa, da chiudere, o niente.
 function barraChiusura(wk){
@@ -2395,7 +2757,7 @@ function renderDayContentCorpo(wk){
   const fasce=fasceDelGiorno(wk,di);
   function fHead(f){const cls=f.tipo==='pranzo'?'fp':'fc';return`<th class="${cls}">${f.label}<br><span style="font-size:10px;font-weight:400;">${f.orario}</span></th>`;}
   let h=barraChiusura(wk)+`<p style="font-size:14px;font-weight:500;margin-bottom:.75rem;">${DAY_NAMES[di]}</p>`;
-  h+='<div class="wrap"><table><thead><tr><th class="scol"></th>';
+  h+='<div class="wrap wrap-fisso"><table><thead><tr><th class="scol"></th>';
   fasce.forEach(f=>{h+=fHead(f);});
   if(tipo==='pranzo_cena'){
     h+='<th style="background:#fff8dd;color:#7a5c00;font-size:11px;padding:5px 8px;min-width:60px;">PRANZO</th>';
@@ -2459,6 +2821,7 @@ function renderDayContentCorpo(wk){
   });
   h+='</tbody></table></div>';
   document.getElementById('day-content').innerHTML=h;
+  renderFasceTelefono(wk);
   if(isManager())updateIncompleteAlert();
 }
 function setRole(key,val){
@@ -3291,19 +3654,69 @@ function addShift(){
 }
 
 // ===== CONFIG =====
-function renderConfig(){
-  const el=document.getElementById('config-grid');if(!el)return;
-  const wk=curWeek();
-  el.innerHTML=DAY_NAMES.map((n,i)=>`
+function grigliaAperture(valori,prefisso){
+  return DAY_NAMES.map((n,i)=>`
     <div class="config-card"><div class="dn">${n}</div>
-      <label><input type="radio" name="d${i}" value="chiuso" ${wk.day_config[i]==='chiuso'?'checked':''}> Chiuso</label>
-      <label><input type="radio" name="d${i}" value="cena" ${wk.day_config[i]==='cena'?'checked':''}> Solo cena</label>
-      <label><input type="radio" name="d${i}" value="pranzo_cena" ${wk.day_config[i]==='pranzo_cena'?'checked':''}> Pranzo + cena</label>
+      <label><input type="radio" name="${prefisso}${i}" value="chiuso" ${valori[i]==='chiuso'?'checked':''}> Chiuso</label>
+      <label><input type="radio" name="${prefisso}${i}" value="cena" ${valori[i]==='cena'?'checked':''}> Solo cena</label>
+      <label><input type="radio" name="${prefisso}${i}" value="pranzo_cena" ${valori[i]==='pranzo_cena'?'checked':''}> Pranzo + cena</label>
     </div>`).join('');
+}
+function renderConfig(){
+  const el=document.getElementById('config-grid');
+  const wk=curWeek();
+  if(el&&wk)el.innerHTML=grigliaAperture(wk.day_config,'d');
+  const t=document.getElementById('tipo-grid');
+  if(t)t.innerHTML=grigliaAperture(settimanaTipo(),'t');
+}
+async function salvaSettimanaTipo(){
+  const v=DAY_NAMES.map((_,i)=>{
+    const r=document.querySelector(`input[name="t${i}"]:checked`);
+    return r?r.value:'cena';
+  });
+  await dbSaveConfig('settimanaTipo',v);
+  renderConfig();
+  alert('Settimana tipo salvata. Le settimane nuove nasceranno cosi\'.');
+}
+function copiaDaSettimanaAttiva(){
+  const wk=curWeek();if(!wk)return;
+  wk.day_config.forEach((v,i)=>{
+    const r=document.querySelector(`input[name="t${i}"][value="${v}"]`);
+    if(r)r.checked=true;
+  });
+  alert('Copiate dalla settimana attiva. Premi "Salva settimana tipo" per confermarle.');
+}
+const ETICHETTA_APERTURA={chiuso:'Chiuso',cena:'Solo cena',pranzo_cena:'Pranzo + cena'};
+// Quante persone hanno un turno in quel giorno. Le chiavi sono
+// persona, persona_P e persona_C: conto le PERSONE, non le caselle.
+function personeConTurno(wk,di){
+  const g=(wk.shift_assign||{})[di]||{};
+  const chi=new Set();
+  Object.entries(g).forEach(([k,v])=>{if(v)chi.add(String(k).replace(/_[PC]$/,''));});
+  return chi.size;
 }
 async function saveConfig(){
   const wk=curWeek();
-  DAY_NAMES.forEach((_,i)=>{const v=document.querySelector(`input[name="d${i}"]:checked`);if(v)wk.day_config[i]=v.value;});
+  // Prima calcolo, poi chiedo, poi applico: se annulli non deve restare
+  // niente di cambiato in memoria.
+  const nuovi=DAY_NAMES.map((_,i)=>{
+    const v=document.querySelector(`input[name="d${i}"]:checked`);
+    return v?v.value:wk.day_config[i];
+  });
+  const aRischio=[];
+  nuovi.forEach((t,i)=>{
+    if(t===wk.day_config[i])return;
+    const n=personeConTurno(wk,i);
+    if(n)aRischio.push({giorno:DAY_NAMES[i],da:wk.day_config[i],a:t,n});
+  });
+  if(aRischio.length){
+    const et=x=>ETICHETTA_APERTURA[x]||x;
+    if(!confirm('In questi giorni ci sono gia\' dei turni assegnati:\n\n'
+      +aRischio.map(x=>`\u2022 ${x.giorno}: ${x.n} person${x.n===1?'a':'e'}, da "${et(x.da)}" a "${et(x.a)}"`).join('\n')
+      +'\n\nI turni NON vengono cancellati, ma spariscono dalla griglia: un giorno chiuso non si disegna, e passando fra "Solo cena" e "Pranzo + cena" le caselle cambiano posto.\n\n'
+      +'Rimettendo l\'apertura com\'era tornano tutti. Procedo?'))return;
+  }
+  DAY_NAMES.forEach((_,i)=>{wk.day_config[i]=nuovi[i];});
   if(!confirm('I giorni di apertura valgono per TUTTI i reparti.\n\nLa modifica sara\' visibile anche a '+Object.keys(REPARTI).filter(k=>k!==REP).map(k=>REPARTI[k].label).join(', ')+'.\n\nConfermi?'))return;
   await dbSaveWeek(wk,{changes:['day_config']});alert('Configurazione salvata per tutti i reparti!');
 }
@@ -3995,6 +4408,13 @@ function giorniFerieUsati(staffId,anno){
   return g;
 }
 function ferieUsate(staffId,anno){return giorniFerieUsati(staffId,anno).size;}
+// Il conteggio copre tutto l'anno, 31 dicembre compreso: le ferie
+// future gia' approvate sono quindi gia' scalate dal monte. Qui si
+// contano quelle, per poterlo dire invece di lasciarlo capire.
+function ferieFuture(staffId,anno){
+  const oggi=dateToStr(new Date());
+  return[...giorniFerieUsati(staffId,anno)].filter(d=>d>oggi).length;
+}
 
 // Dettaglio del conteggio: quali giorni contano e da dove arrivano, e
 // quali giorni approvati NON contano, col motivo. Serve a capire al
@@ -4032,7 +4452,39 @@ function dettaglioFerieUsate(staffId,anno){
 function dataLunga(d){
   return new Date(d+'T12:00:00').toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
 }
+// Il saldo ferie dell'operatore collegato. Mostra SOLO il proprio:
+// prende la persona da currentDipendente, non da un id passato da
+// fuori, cosi' non c'e' modo di farsi dare quello di un altro.
+function monteFerieMioHtml(){
+  const p=currentDipendente;
+  if(!p)return'';
+  const anno=annoOggi();
+  if(monteAnno(p,anno)===null&&!ferieResiduo(p,anno))return'';
+  const disp=ferieDisponibili(p,anno), usate=ferieUsate(p.id,anno), rest=disp-usate;
+  const fut=ferieFuture(p.id,anno);
+  const col=rest<0?'var(--red-text)':rest===0?'var(--orange-text)':'var(--green-text)';
+  const bg=rest<0?'var(--red-bg)':rest===0?'var(--orange-bg)':'var(--green-bg)';
+  const bd=rest<0?'var(--red-border)':rest===0?'var(--orange-border)':'var(--green-border)';
+  const num=v=>v%1?String(v).replace('.',','):String(v);
+  return`<div style="background:${bg};border:0.5px solid ${bd};border-radius:var(--radius);padding:10px 14px;margin-bottom:0.75rem;">
+    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:12px;font-weight:600;color:${col};">Ferie ${anno}</span>
+      <span style="font-size:13px;font-weight:700;color:${col};">${num(rest)}</span>
+      <span style="font-size:12px;color:${col};">giornat${rest===1?'a':'e'} che ti restano</span>
+      <span style="font-size:11px;color:var(--text2);margin-left:auto;">
+        <span onclick="mostraDettaglioFerie('${p.id}',${anno})" style="cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px;" title="Vedi quali giorni sono stati contati">${num(usate)} usat${usate===1?'a':'e'}</span>
+        su ${num(disp)}</span>
+    </div>
+    <p style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.45;">
+      Conteggio su tutto il ${anno}, fino al 31 dicembre.
+      ${fut?`Comprende <b>${num(fut)}</b> giornat${fut===1?'a gi\u00e0 approvata e ancora da fare':'e gi\u00e0 approvate e ancora da fare'}: ${fut===1?'\u00e8 gi\u00e0 scalata':'sono gi\u00e0 scalate'} dal monte.`
+             :`Le ferie future gi\u00e0 approvate vengono scalate subito, non quando arrivano.`}
+    </p>
+  </div>`;
+}
 function mostraDettaglioFerie(staffId,anno){
+  // Un operatore puo' vedere soltanto il proprio dettaglio
+  if(!isManager()&&(!currentDipendente||currentDipendente.id!==staffId))return;
   const p=G.allStaff.find(x=>x.id===staffId);if(!p)return;
   const d=dettaglioFerieUsate(staffId,anno);
   document.getElementById('dett-ferie-popup')?.remove();
@@ -4042,11 +4494,13 @@ function mostraDettaglioFerie(staffId,anno){
   el.onclick=e=>{if(e.target===el)el.remove();};
   el.innerHTML=`<div style="background:#fff;border-radius:var(--radius-lg);padding:1.3rem 1.5rem;width:520px;max-width:95vw;max-height:85vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);">
     <h3 style="font-size:14px;font-weight:500;margin-bottom:2px;">${p.name} &mdash; giorni di ferie contati nel ${anno}</h3>
-    <p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">${d.contati.length} giornat${d.contati.length===1?'a':'e'}</p>
-    ${d.contati.length?d.contati.map(x=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 9px;border-radius:var(--radius);background:var(--bg3);margin-bottom:4px;">
-        <span style="font-size:12px;font-weight:500;text-transform:capitalize;">${dataLunga(x.data)}</span>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:1rem;">${d.contati.length} giornat${d.contati.length===1?'a':'e'} su tutto l'anno, fino al 31 dicembre. Quelle ancora da fare sono gi&agrave; scalate dal monte.</p>
+    ${d.contati.length?d.contati.map(x=>{
+        const futura=x.data>dateToStr(new Date());
+        return`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 9px;border-radius:var(--radius);background:${futura?'var(--blue-bg)':'var(--bg3)'};margin-bottom:4px;">
+        <span style="font-size:12px;font-weight:500;text-transform:capitalize;">${dataLunga(x.data)}${futura?' <span style="font-weight:400;font-size:10px;color:var(--blue-text);text-transform:none;">ancora da fare</span>':''}</span>
         <span style="font-size:11px;color:var(--text2);text-align:right;">${x.origine}</span>
-      </div>`).join(''):'<p style="font-size:12px;color:var(--text3);">Nessun giorno contato.</p>'}
+      </div>`;}).join(''):'<p style="font-size:12px;color:var(--text3);">Nessun giorno contato.</p>'}
     ${d.esclusi.length?`<p style="font-size:12px;font-weight:500;color:var(--text2);margin:14px 0 6px;">Approvati ma NON contati</p>`+
       d.esclusi.map(x=>`<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 9px;border-radius:var(--radius);background:var(--yellow-bg);margin-bottom:4px;">
         <span style="font-size:12px;font-weight:500;text-transform:capitalize;">${dataLunga(x.data)}</span>
@@ -4126,6 +4580,7 @@ function buildFerieMonteHtml(){
   });
   html+='</tbody></table></div>';
   html+=`<p style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5;">
+    Il conteggio copre tutto il ${anno}, fino al <b>31 dicembre</b>: le ferie future gi&agrave; approvate sono quindi <b>gi&agrave; scalate</b> dal monte, non lo saranno quando arriveranno.
     Le <b>usate</b> contano ogni FERIE presente nella griglia dei turni, sia nata da una richiesta approvata sia scritta a mano: lo stesso giorno non viene mai contato due volte.
     Le settimane senza data di inizio non vengono conteggiate, perch&eacute; non si sa a quale anno appartengono.
     Se una persona sfora, il saldo va in rosso ma non viene bloccato niente.</p>`;
@@ -4743,6 +5198,7 @@ function renderFerieStaff(el){
   const year=today.getFullYear();
 
   let html=`<p style="font-size:14px;font-weight:500;margin-bottom:0.5rem;">Le mie ferie</p>`;
+  html+=monteFerieMioHtml();
 
   // Show open windows info
   const finestreAperte=G.ferieFinestre.filter(f=>f.reparto===REP&&f.tipo==='aperta');
