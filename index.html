@@ -2,6 +2,14 @@
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Turni Ristorante</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#1a1a1a">
+<link rel="icon" href="./icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Turni">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -102,6 +110,17 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .pub-badge.yes{background:var(--green-bg);color:var(--green-text);}
 .pub-badge.no{background:var(--bg3);color:var(--text3);border:0.5px solid var(--border);}
 .color-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;padding:8px 12px;background:#fff;border-radius:var(--radius);border:0.5px solid var(--border);align-items:center;}
+/* il menu Azioni: in barra restano Pubblica e Azioni, il resto sta qui dentro */
+.azioni-box{position:relative;display:inline-block;}
+.azioni-menu{display:none;position:absolute;right:0;top:calc(100% + 5px);z-index:120;min-width:240px;
+  background:#fff;border:0.5px solid var(--border2);border-radius:var(--radius);
+  box-shadow:0 16px 34px rgba(40,38,30,.22);padding:5px;}
+.azioni-menu.open{display:block;}
+.azioni-menu button{display:block;width:100%;min-height:40px;border:0;background:none;text-align:left;
+  padding:0 11px;border-radius:var(--radius);font-family:inherit;font-size:13px;color:var(--text);cursor:pointer;}
+.azioni-menu button:hover{background:var(--bg3);}
+.azioni-menu button.rosso{color:var(--red-text);}
+.azioni-menu hr{border:0;border-top:0.5px solid var(--border);margin:4px 2px;}
 .color-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);}
 .color-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0;}
 .staff-detail{background:#fff;border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1rem;}
@@ -211,9 +230,55 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .tel-fascia-l{flex-grow:1;min-width:0;font-size:10px;letter-spacing:.06em;color:var(--text3);text-transform:uppercase;}
 .tel-fascia-n{font-size:11px;font-weight:600;color:var(--text2);}
 .tel-nota{font-size:11px;color:var(--text3);line-height:1.5;margin-top:6px;}
-.tel-post{width:104px;flex-shrink:0;}
+.tel-post{width:122px;flex-shrink:0;}
 .tel-post-no{font-size:10px;letter-spacing:.04em;color:var(--text3);text-transform:uppercase;}
 .tel-sez .day-nav{margin-bottom:8px;}
+/* === CASELLE MODIFICABILI: pannello, trascinamento, riempimento === */
+td.cella-mod{position:relative;cursor:pointer;}
+td.cella-mod .sig{display:inline-block;width:66px;font-size:11px;padding:3px 2px;}
+td.cella-mod.sel{outline:2px solid var(--blue-text);outline-offset:-2px;}
+td.cella-mod.bersaglio{outline:2px dashed #15803d;outline-offset:-2px;}
+td.cella-mod.riempi{box-shadow:inset 0 0 0 99px rgba(21,128,61,.20);}
+.maniglia{position:absolute;right:-4px;bottom:-4px;width:11px;height:11px;background:#15803d;
+  border:2px solid #fff;border-radius:3px;cursor:crosshair;touch-action:none;z-index:4;}
+.fantasma{position:fixed;z-index:400;pointer-events:none;opacity:.92;font-size:11px;font-weight:600;
+  padding:5px 11px;border-radius:5px;transform:translate(-50%,-50%) rotate(-3deg);
+  box-shadow:0 10px 22px rgba(40,38,30,.3);}
+.pan{position:absolute;z-index:300;width:300px;background:#fff;border:0.5px solid var(--border2);
+  border-radius:var(--radius);box-shadow:0 18px 38px rgba(40,38,30,.24);padding:11px;}
+.pan h4{font-size:13px;font-weight:600;margin-bottom:2px;}
+.pan .sub{font-size:11px;color:var(--text3);margin-bottom:9px;}
+.pan .eti{font-size:10px;font-weight:600;letter-spacing:.05em;color:var(--text3);
+  text-transform:uppercase;margin:9px 0 5px;}
+.pan input.sig-in{width:100%;min-height:38px;border:2px solid var(--blue-text);border-radius:var(--radius);
+  padding:0 9px;font-family:inherit;font-size:14px;font-weight:600;text-transform:uppercase;
+  background:#fff;color:var(--text);}
+.pan .riga-az{display:flex;gap:6px;}
+.pan .riga-az button{flex:1;min-height:38px;border-radius:var(--radius);border:0.5px solid var(--blue-border);
+  background:var(--blue-bg);color:var(--blue-text);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
+.pan .riga-az button[disabled]{opacity:.4;cursor:default;}
+.pan .sigle{display:flex;flex-wrap:wrap;gap:5px;}
+.pan .sigle button{min-width:58px;min-height:40px;border:0;border-radius:var(--radius);font-size:13px;
+  font-weight:700;cursor:pointer;font-family:inherit;}
+.pan .sigle button.scelto{outline:2px solid var(--blue-text);outline-offset:2px;}
+.pan .sigle button.neutro{background:#fff;border:0.5px solid var(--border2);color:var(--text2);font-weight:600;}
+.pan .altri{width:100%;min-height:36px;margin-top:7px;border:1px dashed var(--border2);
+  border-radius:var(--radius);background:var(--bg3);color:var(--text2);font-size:12px;cursor:pointer;
+  text-align:left;padding:0 10px;font-family:inherit;}
+.pan .elenco-ruoli{display:flex;flex-direction:column;gap:3px;max-height:230px;overflow:auto;}
+.pan .elenco-ruoli button{min-height:36px;border:0.5px solid var(--border);background:#fff;
+  border-radius:var(--radius);font-size:12px;font-weight:600;color:var(--blue-text);cursor:pointer;
+  text-align:left;padding:0 10px;font-family:inherit;}
+.pan .elenco-ruoli button.scelto{border-color:var(--blue-text);background:var(--blue-bg);}
+.pan p.hint{font-size:10px;color:var(--text3);line-height:1.5;margin-top:7px;}
+.appunti-chip{position:fixed;left:14px;bottom:14px;z-index:350;display:flex;align-items:center;gap:9px;
+  background:#2b2a26;color:#f3f2ec;font-size:12px;padding:8px 10px 8px 13px;border-radius:22px;
+  box-shadow:0 10px 26px rgba(0,0,0,.25);max-width:min(92vw,420px);}
+.appunti-chip b{font-weight:700;padding:2px 8px;border-radius:4px;flex-shrink:0;}
+.appunti-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.appunti-chip button{border:0;background:rgba(255,255,255,.16);color:#f3f2ec;width:26px;height:26px;
+  flex-shrink:0;border-radius:50%;cursor:pointer;font-family:inherit;font-size:13px;}
+
 @media (max-width:860px){
   .app{padding:.6rem;}
   /* la legenda va sotto la griglia, non di fianco */
@@ -1408,13 +1473,20 @@ function renderApp(){
       <div class="color-legend">
         <span style="font-size:11px;font-weight:500;color:var(--text2);margin-right:4px;">Turni:</span>
         ${colorLegendHtml()}
-        ${isManager()?`<button class="btn" style="font-size:11px;padding:4px 10px;" onclick="exportPDF()">&#128196; Esporta PDF</button>
-          <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="openCompare()">&#128065; Confronta</button>
-          ${repDef().senzaGiornaliero?'':`<button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="apriFab()">&#128203; Fabbisogno</button>`}
+        ${isManager()?`<span style="flex-grow:1;"></span>
           <button class="btn" id="pub-btn" style="font-size:11px;padding:4px 12px;font-weight:600;" onclick="pubblicaSettimanaAttiva()"></button>
-          ${repDef().senzaGiornaliero?'':`<button class="btn primary" style="margin-left:auto;font-size:11px;padding:4px 12px;" onclick="generaBozza()">✦ Genera bozza automatica</button>`}
-        <button class="btn" style="font-size:11px;padding:4px 10px;" onclick="doUndo()" title="Annulla ultima modifica">↩ Annulla</button>
-        <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="clearWeek()" title="Svuota tutti i turni della settimana">🗑 Pulisci settimana</button>`:''}
+          <span class="azioni-box">
+            <button class="btn" style="font-size:11px;padding:4px 12px;font-weight:600;" onclick="apriAzioni(event)" aria-haspopup="true">Azioni &#9662;</button>
+            <div class="azioni-menu" id="azioni-menu" role="menu">
+              <button onclick="chiudiAzioni();exportPDF();">&#128196; Esporta PDF</button>
+              <button onclick="chiudiAzioni();openCompare();">&#128065; Confronta settimane</button>
+              ${repDef().senzaGiornaliero?'':`<button onclick="chiudiAzioni();apriFab();">&#128203; Fabbisogno</button>`}
+              ${repDef().senzaGiornaliero?'':`<button onclick="chiudiAzioni();generaBozza();">&#10022; Genera bozza automatica</button>`}
+              <button onclick="chiudiAzioni();doUndo();">&#8617; Annulla l'ultima modifica</button>
+              <hr>
+              <button class="rosso" onclick="chiudiAzioni();clearWeek();">&#128465; Pulisci settimana</button>
+            </div>
+          </span>`:''}
       </div>
       <div id="draft-panel" class="draft-panel" style="display:none;"><span>📋 Hai una bozza salvata per questa settimana</span><button class="btn purple" style="font-size:11px;padding:4px 10px;" onclick="restoreDraft()">Ripristina bozza</button></div>
       <div id="draft-alerts"></div>
@@ -1670,6 +1742,18 @@ function renderNav(){
   }).join('');
 }
 
+// Il menu Azioni della pagina Turni
+function apriAzioni(ev){
+  ev.stopPropagation();
+  const m=document.getElementById('azioni-menu');if(!m)return;
+  m.classList.toggle('open');
+}
+function chiudiAzioni(){
+  const m=document.getElementById('azioni-menu');if(m)m.classList.remove('open');
+}
+document.addEventListener('click',function(ev){
+  if(!ev.target.closest('.azioni-box'))chiudiAzioni();
+});
 function toggleNavGroup(ev,gid){
   ev.stopPropagation();
   const dd=document.getElementById('navdd-'+gid);
@@ -1695,6 +1779,12 @@ function renderLogin(){
         </select>
         <input type="password" id="pwd-input" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
         <p class="err" id="pwd-err" style="display:none;">Password errata.</p>
+        <label style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--text2);cursor:pointer;">
+          <input type="checkbox" id="ricordami" style="width:16px;height:16px;margin-top:1px;cursor:pointer;">
+          <span>Ricordami su questo dispositivo<br>
+            <span style="font-size:11px;color:var(--text3);">Solo sul tuo telefono. Sull'iPad della sala lasciala vuota: l&rsquo;accesso resterebbe aperto a chiunque.</span>
+          </span>
+        </label>
         <button class="btn primary" onclick="doLogin()">Accedi come manager</button>
         <div class="login-or">oppure</div>
         <h3>Accesso operatore</h3>
@@ -1710,6 +1800,57 @@ function renderLogin(){
       G.managers.map(m=>`<option value="${m.id}">${m.name}</option>`).join('');
   }
 }
+// ===== ACCESSO RICORDATO SUL DISPOSITIVO =====
+// Installata sul telefono, l'app non deve richiedere il codice a ogni
+// apertura. L'operatore viene ricordato sempre, il manager solo se
+// spunta la casella: su un computer condiviso non deve restare aperto.
+const CHIAVE_ACCESSO='turni_accesso';
+function ricordaAccesso(v){
+  try{ v?localStorage.setItem(CHIAVE_ACCESSO,JSON.stringify(v)):localStorage.removeItem(CHIAVE_ACCESSO); }
+  catch(e){}
+}
+// Il manager ricordato scade da solo: una spunta messa per sbaglio
+// su un dispositivo condiviso non resta aperta per sempre.
+const GIORNI_RICORDO_MANAGER=30;
+function accessoRicordato(){
+  try{
+    const a=JSON.parse(localStorage.getItem(CHIAVE_ACCESSO)||'null');
+    if(!a)return null;
+    if(a.tipo==='mgr'&&a.quando&&(Date.now()-a.quando)>GIORNI_RICORDO_MANAGER*86400000){
+      ricordaAccesso(null);return null;
+    }
+    return a;
+  }catch(e){ return null; }
+}
+function entraManager(mgr){
+  role=(mgr.ruolo==='responsabile')?'responsabile':'manager';
+  currentManager=mgr;
+  applyReparto(role==='responsabile'?REP_DEFAULT:(mgr.reparto||REP_DEFAULT));
+  renderApp();startPresence();
+}
+function entraOperatore(p){
+  role='dipendente';
+  currentDipendente=p;
+  applyReparto(repOf(p));
+  renderApp();
+  setTimeout(updateRichiesteBadge,500);
+}
+// All'avvio: se c'e' un accesso salvato e vale ancora, entra da solo.
+function riprendiAccesso(){
+  const a=accessoRicordato();
+  if(!a)return false;
+  if(a.tipo==='dip'){
+    const p=G.allStaff.find(s=>s.accessCode&&s.accessCode===a.codice);
+    if(!p){ricordaAccesso(null);return false;}
+    entraOperatore(p);return true;
+  }
+  if(a.tipo==='mgr'){
+    const m=G.managers.find(x=>x.id===a.id);
+    if(!m){ricordaAccesso(null);return false;}
+    entraManager(m);return true;
+  }
+  return false;
+}
 function doLogin(){
   const sel=document.getElementById('manager-select');
   const managerId=sel?sel.value:'';
@@ -1719,10 +1860,9 @@ function doLogin(){
     const mgr=G.managers.find(m=>m.id===managerId);
     if(mgr&&mgr.password===pwd){
       // responsabile = accesso a tutti i reparti; manager = solo al suo
-      role=(mgr.ruolo==='responsabile')?'responsabile':'manager';
-      currentManager=mgr;
-      applyReparto(role==='responsabile'?REP_DEFAULT:(mgr.reparto||REP_DEFAULT));
-      renderApp();startPresence();return;
+      const ric=document.getElementById('ricordami');
+      ricordaAccesso(ric&&ric.checked?{tipo:'mgr',id:mgr.id,quando:Date.now()}:null);
+      entraManager(mgr);return;
     }
     document.getElementById('pwd-err').style.display='block';return;
   }
@@ -1735,13 +1875,13 @@ function doLoginDep(){
   if(!code){document.getElementById('dep-err').style.display='block';return;}
   const p=G.allStaff.find(s=>s.accessCode&&s.accessCode===code);
   if(!p){document.getElementById('dep-err').style.display='block';return;}
-  role='dipendente';
-  currentDipendente=p;
-  applyReparto(repOf(p));
-  renderApp();
-  setTimeout(updateRichiesteBadge,500);
+  ricordaAccesso({tipo:'dip',codice:code});
+  entraOperatore(p);
 }
-function logout(){stopPresence();role='';currentManager=null;currentDipendente=null;renderLogin();}
+function logout(){
+  ricordaAccesso(null);
+  stopPresence();role='';currentManager=null;currentDipendente=null;renderLogin();
+}
 async function changePwd(){const p=document.getElementById('new-pwd').value.trim();if(!p){alert('Inserisci una password.');return;}G.managerPwd=p;await dbSaveConfig('managerPwd',p);alert('Password aggiornata!');}
 
 function goTab(t){
@@ -2611,12 +2751,13 @@ function renderTurniCorpo(wk,wrap){
         const cellBorder=bloc?'outline:2px solid #7e22ce;outline-offset:-2px;'
           :richPending?'outline:2px solid #f5d76e;outline-offset:-2px;':'';
         const cellTitle=bloc?bloc.testo+' — bloccata':isAvail?'Disponibile':richPending?'Richiesta: '+richPending.turno_richiesto:hasOffReq?'Richiesta giorno libero':'';
-        h+=`<td class="shift-cell" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}">
-          ${soloLettura?`<span style="display:inline-block;width:66px;font-size:11px;padding:2px 3px;color:${val?shiftTextColor(val):'var(--text)'};font-weight:${val?'600':'400'};">${val||''}</span>`:`
-          <select onchange="setShift(${sKey},this.value)" style="width:66px;font-size:11px;padding:2px 3px;border:none;background:transparent;color:${val?shiftTextColor(val):'var(--text)'};font-family:inherit;font-weight:${val?'600':'400'};">
-            <option value="" style="background:#fff;color:#1a1a1a;"></option>
-            ${turniSceglibili(val).map(sh=>`<option value="${sh.code}" style="background:#fff;color:#1a1a1a;"${sh.code===val?' selected':''}>${sh.code}</option>`).join('')}
-          </select>`}${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
+        const sg=`<span class="sig" style="color:${val?shiftTextColor(val):'var(--text)'};font-weight:${val?'600':'400'};">${val||''}</span>`;
+        if(soloLettura){
+          h+=`<td class="shift-cell" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}">${sg}${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
+        } else {
+          const scelta=SEL&&SEL.tipo==='turno'&&SEL.di===c.idx&&SEL.pid===p.id&&SEL.serv===(c.servizio||'');
+          h+=`<td class="shift-cell cella-mod${scelta?' sel':''}" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}" data-cella="${c.idx}|${p.id}|${c.servizio||''}">${sg}${scelta?'<span class="maniglia"></span>':''}${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
+        }
       } else {
         h+=`<td class="shift-cell-ro" style="${cs}">${val}</td>`;
       }
@@ -2793,7 +2934,10 @@ function renderDayContentCorpo(wk){
       if(!working){h+=`<td class="xc">X</td>`;}
       else{
         const key=`${di}_${f.id}_${p.id}`;const val=(wk.role_assign[key])||'';
-        if(isManager()&&!settimanaChiusa(wk)){h+=`<td class="rc"><select onchange="setRole('${key}',this.value)"><option value=""></option>${ruoliPerVista().map(r=>`<option value="${r}"${r===val?' selected':''}>${r}</option>`).join('')}</select></td>`;}
+        if(isManager()&&!settimanaChiusa(wk)){
+          const scelta=SEL&&SEL.tipo==='ruolo'&&SEL.key===key;
+          h+=`<td class="rc cella-mod${scelta?' sel':''}" data-ruolo="${key}"><span class="rc-ro" style="display:block;">${val||''}</span>${scelta?'<span class="maniglia"></span>':''}</td>`;
+        }
         else if(isManager()){h+=`<td class="rc" style="font-size:11px;color:var(--text2);padding:3px 5px;">${val||''}</td>`;}
         else{h+=`<td class="rc-ro">${val}</td>`;}
       }
@@ -2836,6 +2980,289 @@ function renderDayContentCorpo(wk){
   renderFasceTelefono(wk);
   if(isManager())updateIncompleteAlert();
 }
+// ===== CASELLE: PANNELLO, COPIA/INCOLLA, TRASCINAMENTO =====
+// Al posto della tendina su ogni casella: si tocca la casella e si apre un
+// pannello con i turni di quella persona. Una casella si copia su un'altra
+// persona, si trascina (con Ctrl si copia) e si riempie di lato come in Excel.
+let SEL=null;        // casella scelta
+let APPUNTI=null;    // {tipo:'turno'|'ruolo', valore, da}
+let PAN_ALTRI=false; // "tutti gli altri turni" aperto
+let tras=null, riemp=null;
+
+function cellaInfo(td){
+  if(!td)return null;
+  if(td.dataset.cella){
+    const a=td.dataset.cella.split('|');
+    const wk=curWeek();if(!wk)return null;
+    return{tipo:'turno',di:+a[0],pid:a[1],serv:a[2]||'',
+           val:getShiftCode(wk,+a[0],a[1],a[2]||null)};
+  }
+  if(td.dataset.ruolo){
+    const wk=curWeek();if(!wk)return null;
+    return{tipo:'ruolo',key:td.dataset.ruolo,val:(wk.role_assign||{})[td.dataset.ruolo]||''};
+  }
+  return null;
+}
+function cellaDi(info){
+  return info.tipo==='turno'
+    ? document.querySelector('[data-cella="'+info.di+'|'+info.pid+'|'+info.serv+'"]')
+    : document.querySelector('[data-ruolo="'+info.key+'"]');
+}
+function personaDi(pid){return (G.allStaff||[]).find(p=>p.id===pid)||null;}
+function ridisegnaVista(){
+  if(SEL&&SEL.tipo==='ruolo')renderDayContent();else renderTurni();
+}
+function chiudiPannello(){const p=document.getElementById('pan-casella');if(p)p.remove();}
+function deseleziona(){const c=SEL;SEL=null;chiudiPannello();if(c){if(c.tipo==='ruolo')renderDayContent();else renderTurni();}}
+function seleziona(info){SEL=info;PAN_ALTRI=false;ridisegnaVista();apriPannelloCasella();}
+
+function disegnaAppunti(){
+  const v=document.getElementById('appunti-chip');if(v)v.remove();
+  if(!APPUNTI)return;
+  const d=document.createElement('div');d.id='appunti-chip';d.className='appunti-chip';
+  const stile=APPUNTI.tipo==='turno'?shiftColorStyle(APPUNTI.valore):'background:var(--blue-bg);color:var(--blue-text);';
+  d.innerHTML='<b style="'+stile+'">'+APPUNTI.valore+'</b>'+
+    '<span>copiato da '+APPUNTI.da+' &mdash; tocca una casella e premi Incolla</span>'+
+    '<button type="button" onclick="APPUNTI=null;disegnaAppunti();chiudiPannello();" title="Annulla la copia">&times;</button>';
+  document.body.appendChild(d);
+}
+
+// --- applicare un valore ---
+function applicaTurno(di,pid,serv,code,chiedi){
+  const p=personaDi(pid);
+  const suoi=(p&&p.canDo)||[];
+  if(chiedi!==false&&code&&suoi.length&&suoi.indexOf(code)<0&&!isFuoriServizio(code)){
+    if(!confirm(code+' non e\' tra i turni di '+(p?p.name:'questa persona')+'.\n\nMetterlo lo stesso?'))return false;
+  }
+  setShift(di,pid,serv||null,code);
+  return true;
+}
+function applicaRuolo(key,val){setRole(key,val);}
+
+// --- il pannello ---
+function apriPannelloCasella(){
+  chiudiPannello();
+  if(!SEL)return;
+  const td=cellaDi(SEL);if(!td)return;
+  const wk=curWeek();if(!wk)return;
+  const pan=document.createElement('div');pan.className='pan';pan.id='pan-casella';
+  let h='';
+  if(SEL.tipo==='turno'){
+    const p=personaDi(SEL.pid);
+    const val=getShiftCode(wk,SEL.di,SEL.pid,SEL.serv||null);
+    const sh=val?getShift(val):null;
+    const orari=[];
+    if(sh&&!sh.is_off&&!sh.is_ferie){if(sh.s1&&sh.e1)orari.push(sh.s1+'-'+sh.e1);if(sh.s2&&sh.e2)orari.push(sh.s2+'-'+sh.e2);}
+    h+='<h4>'+(p?p.name:'')+' &middot; '+DAY_NAMES[SEL.di]+(SEL.serv?(' ('+SEL.serv+')'):'')+'</h4>';
+    h+='<div class="sub">'+(val?('Adesso: '+val+(orari.length?' &middot; '+orari.join(' / '):'')):'Casella vuota')+'</div>';
+    h+='<div class="riga-az">'+
+       '<button type="button" onclick="copiaCasella()"'+(val?'':' disabled')+'>Copia</button>'+
+       '<button type="button" onclick="incollaCasella()"'+(APPUNTI&&APPUNTI.tipo==='turno'?'':' disabled')+'>'+
+       (APPUNTI&&APPUNTI.tipo==='turno'?('Incolla '+APPUNTI.valore):'Incolla')+'</button></div>';
+    h+='<div class="eti">Scrivi la sigla</div>';
+    h+='<input class="sig-in" id="pan-sigla" type="text" value="" placeholder="es. C8" autocomplete="off">';
+    const tutti=turniSceglibili(val).filter(s=>!s.is_off&&!s.is_ferie);
+    const codSuoi=((p&&p.canDo)||[]).filter(c=>tutti.some(s=>s.code===c));
+    const mostraSuoi=codSuoi.length?codSuoi:tutti.map(s=>s.code);
+    h+='<div class="eti">'+(codSuoi.length?('I turni di '+(p?p.name:'')):'Turni')+'</div><div class="sigle">';
+    mostraSuoi.forEach(c=>{h+='<button type="button" class="'+(c===val?'scelto':'')+'" style="'+shiftColorStyle(c)+'" onclick="scegliTurno(\''+c+'\')">'+c+'</button>';});
+    h+='</div>';
+    if(codSuoi.length){
+      const altri=tutti.map(s=>s.code).filter(c=>codSuoi.indexOf(c)<0);
+      if(PAN_ALTRI){
+        h+='<div class="eti">Tutti gli altri</div><div class="sigle">';
+        altri.forEach(c=>{h+='<button type="button" style="'+shiftColorStyle(c)+'" onclick="scegliTurno(\''+c+'\')">'+c+'</button>';});
+        h+='</div>';
+      } else if(altri.length){
+        h+='<button type="button" class="altri" onclick="PAN_ALTRI=true;apriPannelloCasella();">Tutti gli altri turni &#9662;</button>';
+      }
+    }
+    const speciali=turniSceglibili(val).filter(s=>s.is_off||s.is_ferie).map(s=>s.code);
+    h+='<div class="sigle" style="margin-top:7px;">';
+    speciali.forEach(c=>{h+='<button type="button" class="'+(c===val?'scelto':'')+'" style="'+shiftColorStyle(c)+'" onclick="scegliTurno(\''+c+'\')">'+c+'</button>';});
+    h+='<button type="button" class="neutro" onclick="scegliTurno(\'\')">Svuota</button></div>';
+    h+='<p class="hint">Invio conferma quello che hai scritto, Esc chiude. Trascina la sigla per spostarla, con Ctrl la copi.</p>';
+  } else {
+    const parti=SEL.key.split('_');
+    const p=personaDi(parti[2]);
+    const f=fascia(+parti[1]);
+    const val=(wk.role_assign||{})[SEL.key]||'';
+    h+='<h4>'+(p?p.name:'')+' &middot; '+(f?f.label:'')+'</h4>';
+    h+='<div class="sub">'+(f?f.orario:'')+(val?(' &middot; adesso '+val):' &middot; nessuna postazione')+'</div>';
+    h+='<div class="riga-az">'+
+       '<button type="button" onclick="copiaCasella()"'+(val?'':' disabled')+'>Copia</button>'+
+       '<button type="button" onclick="incollaCasella()"'+(APPUNTI&&APPUNTI.tipo==='ruolo'?'':' disabled')+'>'+
+       (APPUNTI&&APPUNTI.tipo==='ruolo'?('Incolla '+APPUNTI.valore):'Incolla')+'</button></div>';
+    h+='<div class="eti">Postazione</div><div class="elenco-ruoli">';
+    ruoliPerVista().forEach(r=>{
+      h+='<button type="button" class="'+(r===val?'scelto':'')+'" onclick="scegliRuolo(\''+r.replace(/'/g,"\\'")+'\')">'+r+'</button>';
+    });
+    h+='<button type="button" style="color:var(--text2);" onclick="scegliRuolo(\'\')">Nessuna</button></div>';
+    h+='<p class="hint">Trascina la postazione su un\'altra persona per spostarla, con Ctrl la copi. L\'angolo verde la ripete sulle altre fasce.</p>';
+  }
+  pan.innerHTML=h;
+  document.body.appendChild(pan);
+  const r=td.getBoundingClientRect();
+  const largh=pan.offsetWidth, alt=pan.offsetHeight;
+  let x=Math.min(r.left+window.scrollX, window.scrollX+document.documentElement.clientWidth-largh-10);
+  let y=r.bottom+window.scrollY+5;
+  if(y+alt>window.scrollY+document.documentElement.clientHeight-8)
+    y=Math.max(window.scrollY+8,r.top+window.scrollY-alt-5);
+  pan.style.left=Math.max(8,x)+'px';pan.style.top=y+'px';
+  const inp=document.getElementById('pan-sigla');if(inp)inp.focus();
+}
+function scegliTurno(code){
+  if(!SEL)return;
+  const s=SEL;SEL=null;chiudiPannello();
+  if(!applicaTurno(s.di,s.pid,s.serv,code,true)){SEL=s;apriPannelloCasella();}
+}
+function scegliRuolo(r){
+  if(!SEL)return;
+  const s=SEL;SEL=null;chiudiPannello();
+  applicaRuolo(s.key,r);
+}
+function copiaCasella(){
+  if(!SEL)return;
+  const wk=curWeek();
+  if(SEL.tipo==='turno'){
+    const p=personaDi(SEL.pid);
+    APPUNTI={tipo:'turno',valore:getShiftCode(wk,SEL.di,SEL.pid,SEL.serv||null),
+             da:(p?p.name:'')+', '+DAY_NAMES[SEL.di].toLowerCase()};
+  } else {
+    const parti=SEL.key.split('_');const p=personaDi(parti[2]);
+    APPUNTI={tipo:'ruolo',valore:(wk.role_assign||{})[SEL.key]||'',da:(p?p.name:'')};
+  }
+  deseleziona();disegnaAppunti();
+}
+function incollaCasella(){
+  if(!SEL||!APPUNTI)return;
+  const s=SEL;SEL=null;chiudiPannello();
+  if(s.tipo==='turno'&&APPUNTI.tipo==='turno')applicaTurno(s.di,s.pid,s.serv,APPUNTI.valore,true);
+  if(s.tipo==='ruolo'&&APPUNTI.tipo==='ruolo')applicaRuolo(s.key,APPUNTI.valore);
+}
+
+// --- scegliere la casella ---
+document.addEventListener('click',function(ev){
+  const td=ev.target.closest('.cella-mod');
+  if(td){
+    if(ev.target.closest('.maniglia'))return;
+    const info=cellaInfo(td);if(!info)return;
+    if(SEL&&SEL.tipo===info.tipo&&
+       ((info.tipo==='turno'&&SEL.di===info.di&&SEL.pid===info.pid&&SEL.serv===info.serv)||
+        (info.tipo==='ruolo'&&SEL.key===info.key))){deseleziona();return;}
+    seleziona(info);return;
+  }
+  if(!ev.target.closest('#pan-casella')&&!ev.target.closest('#appunti-chip')&&SEL)deseleziona();
+});
+document.addEventListener('keydown',function(ev){
+  if(ev.key==='Escape'&&SEL){deseleziona();return;}
+  const inp=document.getElementById('pan-sigla');
+  if(inp&&ev.target===inp&&ev.key==='Enter'){
+    const c=inp.value.trim().toUpperCase();
+    if(!c){deseleziona();return;}
+    if(!getShift(c)){alert('La sigla '+c+' non esiste nella legenda.');return;}
+    scegliTurno(c);
+  }
+});
+
+// --- trascinamento e riempimento ---
+function fantasmaPer(info){
+  const d=document.createElement('div');d.className='fantasma';
+  d.style.cssText+=info.tipo==='turno'?shiftColorStyle(info.val):'background:var(--blue-bg);color:var(--blue-text);';
+  d.textContent=info.val;return d;
+}
+document.addEventListener('pointerdown',function(ev){
+  const man=ev.target.closest('.maniglia');
+  if(man){
+    const info=cellaInfo(man.closest('.cella-mod'));
+    if(info){riemp={da:info,toccate:[]};ev.preventDefault();}
+    return;
+  }
+  // col dito non si trascina: la tabella deve restare scorribile.
+  // Da telefono e iPad si usa Copia/Incolla dal pannello.
+  if(ev.pointerType==='touch')return;
+  const td=ev.target.closest('.cella-mod');if(!td)return;
+  const info=cellaInfo(td);
+  if(!info||!info.val)return;
+  tras={da:info,x:ev.clientX,y:ev.clientY,attivo:false,fantasma:null,bersaglio:null};
+});
+document.addEventListener('pointermove',function(ev){
+  if(riemp){
+    const el=document.elementFromPoint(ev.clientX,ev.clientY);
+    const td=el&&el.closest?el.closest('.cella-mod'):null;
+    document.querySelectorAll('.cella-mod.riempi').forEach(c=>c.classList.remove('riempi'));
+    riemp.toccate=[];
+    if(td){
+      const riga=td.parentNode;
+      const celle=[].slice.call(riga.querySelectorAll('.cella-mod'));
+      const partenza=cellaDi(riemp.da);
+      const i1=celle.indexOf(partenza),i2=celle.indexOf(td);
+      if(i1>=0&&i2>=0){
+        const a=Math.min(i1,i2),b=Math.max(i1,i2);
+        for(let k=a;k<=b;k++){if(k===i1)continue;celle[k].classList.add('riempi');riemp.toccate.push(celle[k]);}
+      }
+    }
+    return;
+  }
+  if(!tras)return;
+  if(!tras.attivo){
+    if(Math.abs(ev.clientX-tras.x)<6&&Math.abs(ev.clientY-tras.y)<6)return;
+    tras.attivo=true;chiudiPannello();
+    tras.fantasma=fantasmaPer(tras.da);document.body.appendChild(tras.fantasma);
+  }
+  tras.fantasma.style.left=ev.clientX+'px';
+  tras.fantasma.style.top=ev.clientY+'px';
+  const el=document.elementFromPoint(ev.clientX,ev.clientY);
+  const td=el&&el.closest?el.closest('.cella-mod'):null;
+  if(tras.bersaglio&&tras.bersaglio!==td)tras.bersaglio.classList.remove('bersaglio');
+  if(td){
+    const info=cellaInfo(td);
+    if(info&&info.tipo===tras.da.tipo){td.classList.add('bersaglio');tras.bersaglio=td;}
+  }
+});
+document.addEventListener('pointerup',function(ev){
+  if(riemp){
+    const celle=riemp.toccate.slice();const da=riemp.da;riemp=null;
+    document.querySelectorAll('.cella-mod.riempi').forEach(c=>c.classList.remove('riempi'));
+    if(!celle.length)return;
+    const bersagli=celle.map(cellaInfo).filter(Boolean);
+    SEL=null;chiudiPannello();
+    bersagli.forEach(b=>{
+      if(b.tipo==='turno')applicaTurno(b.di,b.pid,b.serv,da.val,false);
+      else applicaRuolo(b.key,da.val);
+    });
+    return;
+  }
+  if(!tras)return;
+  const t=tras;tras=null;
+  if(t.fantasma)t.fantasma.remove();
+  if(t.bersaglio)t.bersaglio.classList.remove('bersaglio');
+  if(!t.attivo)return;
+  const el=document.elementFromPoint(ev.clientX,ev.clientY);
+  const td=el&&el.closest?el.closest('.cella-mod'):null;
+  if(!td)return;
+  const dest=cellaInfo(td);
+  if(!dest||dest.tipo!==t.da.tipo)return;
+  if(dest.tipo==='turno'&&dest.di===t.da.di&&dest.pid===t.da.pid&&dest.serv===t.da.serv)return;
+  if(dest.tipo==='ruolo'&&dest.key===t.da.key)return;
+  const copia=ev.ctrlKey||ev.metaKey||ev.altKey;
+  SEL=null;chiudiPannello();
+  if(dest.tipo==='turno'){
+    if(!applicaTurno(dest.di,dest.pid,dest.serv,t.da.val,true))return;
+    if(!copia)applicaTurno(t.da.di,t.da.pid,t.da.serv,'',false);
+  } else {
+    applicaRuolo(dest.key,t.da.val);
+    if(!copia)applicaRuolo(t.da.key,'');
+  }
+});
+document.addEventListener('pointercancel',function(){
+  if(tras&&tras.fantasma)tras.fantasma.remove();
+  tras=null;riemp=null;
+  document.querySelectorAll('.cella-mod.riempi,.cella-mod.bersaglio').forEach(c=>{
+    c.classList.remove('riempi');c.classList.remove('bersaglio');});
+});
+window.addEventListener('resize',function(){if(SEL)apriPannelloCasella();});
+
 function setRole(key,val){
   const wk=curWeek();
   if(vietatoSeChiusa(wk,'le postazioni non si cambiano piu\'')){renderDayContent();return;}
@@ -6491,9 +6918,18 @@ async function init(){
   document.getElementById('loading-screen').style.display='none';
   document.getElementById('app').style.display='block';
   if(!ok){document.getElementById('app').innerHTML='<div style="padding:2rem;text-align:center;"><p style="font-size:16px;font-weight:500;color:var(--red-text);">Errore di connessione.</p></div>';return;}
+  if(riprendiAccesso())return;
   renderLogin();
   renderLoginManagers();
 }
 init();
+// L'app installata sul telefono: il service worker serve perche' Android
+// offra "Installa". Prende sempre prima dalla rete, cosi' un aggiornamento
+// si vede subito; la copia salvata serve solo quando manca la linea.
+if('serviceWorker' in navigator){
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('./sw.js').catch(function(){});
+  });
+}
 </script>
 </body></html>
