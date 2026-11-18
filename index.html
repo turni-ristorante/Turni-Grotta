@@ -248,6 +248,8 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
   box-shadow:0 1px 3px rgba(40,38,30,.14);}
 .filtri .nascosti{font-size:11px;color:var(--text3);}
 td.manca{background:var(--red-bg);color:var(--red-text);font-weight:600;}
+td.cop-cella{cursor:pointer;}
+td.cop-cella:hover{outline:1px solid var(--border2);outline-offset:-1px;}
 
 /* === CASELLE MODIFICABILI: pannello, trascinamento, riempimento === */
 td.cella-mod{position:relative;cursor:pointer;}
@@ -2659,6 +2661,10 @@ function renderFasceTelefono(wk){
 // ===== SECONDO GIRO: filtri, copertura, bozza, copia settimana =====
 let FILTRO_STAFF='tutti';   // tutti | senza | extra
 function setFiltroStaff(v){FILTRO_STAFF=v;renderTurni();}
+// Nel giornaliero chi non lavora quel giorno e' una riga di X: nascosto
+// di default, con un interruttore per rivederlo.
+let GIO_NASCONDI=true;
+function setGioNascondi(v){GIO_NASCONDI=!!v;renderDayContent();}
 
 // Quante persone di QUESTO reparto hanno un turno in quella settimana.
 function turniDelReparto(w){
@@ -2918,13 +2924,13 @@ function renderTurniCorpo(wk,wrap){
       });
     } else {
       h+='<tr class="count-row"><td class="scol" style="background:var(--bg3);">In servizio / servono</td>';
+      // un solo conto per giorno: nei giorni con pranzo e cena la casella
+      // copre le due colonne, perche' il fabbisogno e' della giornata
+      const giorniContati=new Set();
       cols.forEach(c=>{
-        const n=staffPerVista().filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);return code&&!isFuoriServizio(code);}).length;
-        // quante persone servono quel giorno: le postazioni del fabbisogno
-        const fab=getFabGiorno(c.idx,wk.day_config[c.idx]);
-        const serve=(fab&&fab.slots)?fab.slots.length:0;
-        if(!serve){h+=`<td>${n||''}</td>`;}
-        else h+=`<td class="${n<serve?'manca':''}" title="${n<serve?'Mancano '+(serve-n)+' persone rispetto al fabbisogno':'Copertura a posto'}">${n} / ${serve}</td>`;
+        if(giorniContati.has(c.idx))return;
+        giorniContati.add(c.idx);
+        h+=coperturaGiornoCella(wk,c.idx,c.tipo==='pranzo_cena'?' colspan="2"':'');
       });
       h+='<td style="border-left:2px solid var(--border2);background:var(--bg3);"></td>';
       h+='</tr>';
@@ -3040,7 +3046,10 @@ function renderDayContentCorpo(wk){
   const di=wk.selected_day;const tipo=wk.day_config[di];
   const fasce=fasceDelGiorno(wk,di);
   function fHead(f){const cls=f.tipo==='pranzo'?'fp':'fc';return`<th class="${cls}">${f.label}<br><span style="font-size:10px;font-weight:400;">${f.orario}</span></th>`;}
+  let nascostiGio=0;
   let h=barraChiusura(wk)+`<p style="font-size:14px;font-weight:500;margin-bottom:.75rem;">${DAY_NAMES[di]}</p>`;
+  const segnaposto='<!--FILTRO-GIORNALIERO-->';
+  h+=segnaposto;
   h+='<div class="wrap wrap-fisso"><table><thead><tr><th class="scol"></th>';
   fasce.forEach(f=>{h+=fHead(f);});
   if(tipo==='pranzo_cena'){
@@ -3059,6 +3068,7 @@ function renderDayContentCorpo(wk){
     const isInactive=p.attivo===false;
     const hasShiftToday=cp||cc;
     if(isInactive&&!hasShiftToday)return;
+    if(GIO_NASCONDI&&!hasShiftToday){nascostiGio++;return;}
     h+=`<tr${isInactive?' style="opacity:0.6;"':''}><td class="scol" style="font-size:12px;">${p.name}${isInactive?'<span style="font-size:9px;color:var(--text3);margin-left:4px;">(arch.)</span>':''}${isManager()&&isExtra(p)?'<span class="extra-badge">Extra</span>':''}</td>`;
     fasce.forEach(f=>{
       const working=personInFascia(wk,di,p.id,f,tipo);
@@ -3107,6 +3117,11 @@ function renderDayContentCorpo(wk){
     h+='</tr>';
   });
   h+='</tbody></table></div>';
+  h=h.replace(segnaposto,
+    '<div class="filtri"><div class="gruppo" role="group" aria-label="Chi mostrare">'+
+    '<button type="button" aria-pressed="'+(GIO_NASCONDI?'true':'false')+'" onclick="setGioNascondi(true)">Nascondi chi non lavora</button>'+
+    '<button type="button" aria-pressed="'+(GIO_NASCONDI?'false':'true')+'" onclick="setGioNascondi(false)">Mostra tutti</button>'+
+    '</div>'+(GIO_NASCONDI&&nascostiGio?'<span class="nascosti">'+nascostiGio+' '+(nascostiGio===1?'persona nascosta':'persone nascoste')+'</span>':'')+'</div>');
   document.getElementById('day-content').innerHTML=h;
   renderFasceTelefono(wk);
   if(isManager())updateIncompleteAlert();
@@ -3393,6 +3408,85 @@ document.addEventListener('pointercancel',function(){
     c.classList.remove('riempi');c.classList.remove('bersaglio');});
 });
 window.addEventListener('resize',function(){if(SEL)apriPannelloCasella();});
+
+// ===== COPERTURA DEL GIORNO =====
+// Il fabbisogno e' per giornata, non per servizio: nei giorni con pranzo
+// e cena le dieci postazioni sono dieci in tutto, non dieci per servizio.
+// Per questo il conto si fa una volta sola sul giorno.
+function coperturaGiorno(wk,di){
+  const fab=getFabGiorno(di,aperturaGiorno(di));
+  const slots=(fab&&fab.slots)?fab.slots:[];
+  const giorno=(wk.shift_assign||{})[di]||{};
+  const presenti=[];
+  (G.allStaff||[]).filter(s=>repOf(s)===REP).forEach(s=>{
+    // una persona vale un turno: lo stesso codice su pranzo e cena non conta due volte
+    const suoi=[giorno[s.id],giorno[s.id+'_P'],giorno[s.id+'_C']].filter(v=>v&&!isFuoriServizio(v));
+    [...new Set(suoi)].forEach(v=>presenti.push({code:v,nome:s.name}));
+  });
+  const rimasti=presenti.slice();
+  const mancanti=[];
+  slots.forEach(sl=>{
+    const codici=sl.codes||[];
+    const i=rimasti.findIndex(x=>codici.includes(x.code));
+    if(i>=0)rimasti.splice(i,1); else mancanti.push(codici);
+  });
+  return{n:presenti.length,serve:slots.length,mancanti:mancanti,extra:rimasti};
+}
+function chiudiCopertura(){const p=document.getElementById('pan-copertura');if(p)p.remove();}
+function apriCopertura(di,td){
+  const gia=document.getElementById('pan-copertura');
+  chiudiCopertura();
+  if(gia&&gia.dataset.di==String(di))return;// secondo clic: chiude
+  const wk=curWeek();if(!wk)return;
+  const r=coperturaGiorno(wk,di);
+  const p=document.createElement('div');p.className='pan';p.id='pan-copertura';p.dataset.di=di;
+  let h='<h4>'+DAY_NAMES[di]+'</h4>';
+  if(!r.serve){
+    h+='<div class="sub">Per questo giorno non hai impostato il fabbisogno.</div>'+
+       '<button type="button" class="altri" style="margin-top:4px;" onclick="chiudiCopertura();apriFab();">Apri il Fabbisogno &rarr;</button>';
+  }else{
+    h+='<div class="sub">In servizio '+r.n+' &middot; servono '+r.serve+'</div>';
+    if(!r.mancanti.length){
+      h+='<p style="font-size:12px;color:var(--green-text,#15803d);font-weight:600;margin:2px 0 6px;">Il fabbisogno &egrave; coperto.</p>';
+    }else{
+      // raggruppo le postazioni scoperte uguali: "2 x C8 o C7"
+      const gruppi={};
+      r.mancanti.forEach(cod=>{const k=cod.join(' o ')||'(nessun turno indicato)';gruppi[k]=(gruppi[k]||0)+1;});
+      h+='<div class="eti">Turni che mancano</div><div style="display:flex;flex-direction:column;gap:4px;">';
+      Object.keys(gruppi).forEach(k=>{
+        h+='<div style="display:flex;align-items:center;gap:8px;font-size:13px;">'+
+           '<span style="min-width:26px;font-weight:700;color:var(--red-text);">'+gruppi[k]+'&times;</span>'+
+           '<span style="font-weight:600;">'+k+'</span></div>';
+      });
+      h+='</div>';
+    }
+    if(r.extra.length){
+      h+='<div class="eti">In pi&ugrave; rispetto al fabbisogno</div>'+
+         '<p style="font-size:12px;color:var(--text2);line-height:1.5;margin:0;">'+
+         r.extra.map(x=>x.nome+' ('+x.code+')').join(', ')+'</p>';
+    }
+    h+='<p class="hint">Il fabbisogno &egrave; di tutta la giornata: nei giorni con pranzo e cena le postazioni si contano una volta sola.</p>';
+  }
+  p.innerHTML=h;
+  document.body.appendChild(p);
+  const b=td.getBoundingClientRect();
+  const largh=p.offsetWidth,alt=p.offsetHeight;
+  let x=Math.min(b.left+window.scrollX,window.scrollX+document.documentElement.clientWidth-largh-10);
+  let y=b.top+window.scrollY-alt-6;
+  if(y<window.scrollY+8)y=b.bottom+window.scrollY+6;
+  p.style.left=Math.max(8,x)+'px';p.style.top=y+'px';
+}
+document.addEventListener('click',function(ev){
+  if(!ev.target.closest('#pan-copertura')&&!ev.target.closest('.count-row'))chiudiCopertura();
+});
+
+function coperturaGiornoCella(wk,di,span){
+  const r=coperturaGiorno(wk,di);
+  if(!r.serve)return`<td${span} class="cop-cella" onclick="apriCopertura(${di},this)" title="Fabbisogno non impostato per questo giorno">${r.n||''}</td>`;
+  const manca=r.n<r.serve||r.mancanti.length;
+  const titolo=r.mancanti.length?('Mancano '+r.mancanti.length+' turni: clicca per vederli'):'Copertura a posto';
+  return`<td${span} class="cop-cella ${manca?'manca':''}" onclick="apriCopertura(${di},this)" title="${titolo}">${r.n} / ${r.serve}</td>`;
+}
 
 function setRole(key,val){
   const wk=curWeek();
