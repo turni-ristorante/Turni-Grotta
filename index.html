@@ -233,6 +233,22 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .tel-post{width:122px;flex-shrink:0;}
 .tel-post-no{font-size:10px;letter-spacing:.04em;color:var(--text3);text-transform:uppercase;}
 .tel-sez .day-nav{margin-bottom:8px;}
+/* === SECONDO GIRO: bozza, filtri, copertura === */
+.wrap.bozza{background:repeating-linear-gradient(45deg,#fdf6e3,#fdf6e3 5px,#fffdf5 5px,#fffdf5 11px);}
+.fascetta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-radius:var(--radius);
+  padding:9px 13px;margin-bottom:10px;font-size:12px;}
+.fascetta.gialla{background:var(--yellow-bg);border:0.5px solid var(--yellow-border);color:var(--yellow-text);}
+.fascetta b{font-size:12px;font-weight:600;}
+.fascetta .btn{font-size:11px;padding:4px 12px;}
+.filtri{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+.filtri .gruppo{display:flex;background:var(--bg4);border-radius:var(--radius);padding:3px;gap:3px;}
+.filtri .gruppo button{min-height:32px;padding:0 12px;border:0;background:none;border-radius:var(--radius);
+  font-family:inherit;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;}
+.filtri .gruppo button[aria-pressed="true"]{background:#fff;color:var(--text);font-weight:600;
+  box-shadow:0 1px 3px rgba(40,38,30,.14);}
+.filtri .nascosti{font-size:11px;color:var(--text3);}
+td.manca{background:var(--red-bg);color:var(--red-text);font-weight:600;}
+
 /* === CASELLE MODIFICABILI: pannello, trascinamento, riempimento === */
 td.cella-mod{position:relative;cursor:pointer;}
 td.cella-mod .sig{display:inline-block;width:66px;font-size:11px;padding:3px 2px;}
@@ -1490,6 +1506,7 @@ function renderApp(){
       </div>
       <div id="draft-panel" class="draft-panel" style="display:none;"><span>📋 Hai una bozza salvata per questa settimana</span><button class="btn purple" style="font-size:11px;padding:4px 10px;" onclick="restoreDraft()">Ripristina bozza</button></div>
       <div id="draft-alerts"></div>
+      ${isManager()?'<div id="avviso-copia"></div><div id="riga-filtri"></div>':''}
       ${isManager()?'':'<div id="vista-telefono" class="solo-telefono"></div>'}
       <div class="main-with-sidebar">
         <div class="main-content"><div class="wrap wrap-fisso" id="turni-wrap"></div></div>
@@ -2639,13 +2656,117 @@ function renderFasceTelefono(wk){
   box.innerHTML=h||'<p class="tel-nota">Nessuna fascia per questo giorno.</p>';
 }
 
+// ===== SECONDO GIRO: filtri, copertura, bozza, copia settimana =====
+let FILTRO_STAFF='tutti';   // tutti | senza | extra
+function setFiltroStaff(v){FILTRO_STAFF=v;renderTurni();}
+
+// Quante persone di QUESTO reparto hanno un turno in quella settimana.
+function turniDelReparto(w){
+  const ids=new Set((G.allStaff||[]).filter(s=>repOf(s)===REP).map(s=>s.id));
+  let n=0;
+  Object.values(w.shift_assign||{}).forEach(g=>{
+    Object.keys(g||{}).forEach(k=>{
+      const pid=k.replace(/_P$/,'').replace(/_C$/,'');
+      if(ids.has(pid)&&g[k])n++;
+    });
+  });
+  return n;
+}
+// Le settimane piu' recenti di questo reparto, dalla piu' vicina.
+// Le settimane sono comuni a tutti i reparti: una creata dalla cucina
+// e' vuota per la sala, quindi non si propone come sorgente.
+function settimaneDaCuiCopiare(wk){
+  if(!wk)return[];
+  return(G.weeks||[])
+    .filter(w=>w.id!==wk.id&&w.startDate&&turniDelReparto(w)>0)
+    .filter(w=>!wk.startDate||w.startDate<wk.startDate)
+    .sort((a,b)=>b.startDate.localeCompare(a.startDate))
+    .slice(0,6);
+}
+async function copiaTurniDa(srcId){
+  const wk=curWeek();if(!wk)return;
+  if(vietatoSeChiusa(wk,'non si possono copiare turni'))return;
+  const src=(G.weeks||[]).find(w=>w.id===srcId);if(!src)return;
+  const ids=new Set((G.allStaff||[]).filter(s=>repOf(s)===REP).map(s=>s.id));
+  // conta prima, per dirlo nella conferma
+  let quanti=0,bloccati=0;
+  Object.entries(src.shift_assign||{}).forEach(([di,g])=>{
+    Object.entries(g||{}).forEach(([k,val])=>{
+      const pid=k.replace(/_P$/,'').replace(/_C$/,'');
+      if(!ids.has(pid)||!val)return;
+      if(bloccoCasella(+di,pid))bloccati++;else quanti++;
+    });
+  });
+  if(!quanti){alert('Non c\'e\' niente da copiare da "'+src.name+'".');return;}
+  if(!confirm('Copiare '+quanti+' turni da "'+src.name+'" a "'+wk.name+'"?\n\n'+
+      (bloccati?(bloccati+' giorni restano vuoti: ci sono ferie o richieste gia\' approvate.\n\n'):'')+
+      'Poi ricordati di premere Salva.'))return;
+  pushUndo(wk);
+  Object.entries(src.shift_assign||{}).forEach(([di,g])=>{
+    Object.entries(g||{}).forEach(([k,val])=>{
+      const pid=k.replace(/_P$/,'').replace(/_C$/,'');
+      if(!ids.has(pid)||!val)return;
+      if(bloccoCasella(+di,pid))return;
+      if(!wk.shift_assign[di])wk.shift_assign[di]={};
+      wk.shift_assign[di][k]=val;
+    });
+  });
+  markDirty();
+  renderTurni();
+  alert(quanti+' turni copiati. Controllali e premi Salva.');
+}
+// Le fascette sopra la griglia: bozza, copia, filtri.
+function aggiornaBarreManager(wk){
+  const copia=document.getElementById('avviso-copia');
+  const filtri=document.getElementById('riga-filtri');
+  if(!copia||!filtri||!isManager())return;
+
+  // --- settimana vuota: da dove copiare ---
+  let h='';
+  const chiusa=settimanaChiusa(wk);
+  if(wk&&!chiusa&&turniDelReparto(wk)===0){
+    const cand=settimaneDaCuiCopiare(wk);
+    if(cand.length){
+      const prima=cand[0];
+      h+='<div class="fascetta gialla"><b>Questa settimana &egrave; vuota in '+repLabel()+'.</b>'+
+         '<span>Puoi partire dall\'ultima compilata: <b>'+prima.name+'</b>, '+turniDelReparto(prima)+' turni. '+
+         'Le ferie gi&agrave; approvate restano come sono.</span>'+
+         '<button class="btn warn" style="margin-left:auto;" onclick="copiaTurniDa(\''+prima.id+'\')">Copia quei turni qui</button>';
+      if(cand.length>1){
+        h+='<select class="btn" style="font-size:11px;padding:4px 8px;" onchange="if(this.value)copiaTurniDa(this.value);this.selectedIndex=0;">'+
+           '<option value="">Un\'altra settimana&hellip;</option>'+
+           cand.slice(1).map(w=>'<option value="'+w.id+'">'+w.name+' — '+turniDelReparto(w)+' turni</option>').join('')+
+           '</select>';
+      }
+      h+='</div>';
+    }
+  }
+  // --- bozza ---
+  if(wk&&!chiusa&&!isPublished(wk)){
+    h+='<div class="fascetta gialla"><b>Bozza</b><span>Lo staff non vede questa settimana finch&eacute; non premi Pubblica. '+
+       'Finch&eacute; &egrave; bozza la griglia resta rigata.</span></div>';
+  }
+  copia.innerHTML=h;
+
+  // --- filtri ---
+  const nascosti=window._nascostiDalFiltro||0;
+  filtri.innerHTML='<div class="filtri"><div class="gruppo" role="group" aria-label="Chi mostrare">'+
+    '<button type="button" aria-pressed="'+(FILTRO_STAFF==='senza')+'" onclick="setFiltroStaff(\'senza\')">Nascondi chi non lavora questa settimana</button>'+
+    '<button type="button" aria-pressed="'+(FILTRO_STAFF==='extra')+'" onclick="setFiltroStaff(\'extra\')">Mostra solo extra</button>'+
+    '<button type="button" aria-pressed="'+(FILTRO_STAFF==='tutti')+'" onclick="setFiltroStaff(\'tutti\')">Mostra tutti</button>'+
+    '</div>'+(nascosti?'<span class="nascosti">'+nascosti+' '+(nascosti===1?'persona nascosta':'persone nascoste')+'</span>':'')+'</div>';
+}
+
 function renderTurni(){
   const wk=isManager()?curWeek():getDepWeek();
   const wrap=document.getElementById('turni-wrap');
   if(!wk){wrap.innerHTML='<p style="color:var(--text2);padding:1rem;">Nessuna settimana disponibile.</p>';return;}
   if(!isManager()){const el=document.getElementById('dep-week-label');if(el)el.textContent=wk.name;}
   aggiornaBottonePubblica();
-  return conIstantanea(wk,()=>{renderVistaTelefono(wk);return renderTurniCorpo(wk,wrap);});
+  wrap.className='wrap wrap-fisso'+((isManager()&&!settimanaChiusa(wk)&&!isPublished(wk))?' bozza':'');
+  const esito=conIstantanea(wk,()=>{renderVistaTelefono(wk);return renderTurniCorpo(wk,wrap);});
+  aggiornaBarreManager(wk);
+  return esito;
 }
 // La fascetta in cima alla settimana: chiusa, da chiudere, o niente.
 function barraChiusura(wk){
@@ -2724,6 +2845,7 @@ function renderTurniCorpo(wk,wrap){
   const staffPerTurni=personePerVista();
   // La riga di un ospite si disegna leggendo la legenda del suo
   // reparto, altrimenti la sigla non verrebbe riconosciuta.
+  window._nascostiDalFiltro=0;
   staffPerTurni.forEach(p=>conReparto(isOspite(p)?repOf(p):null,()=>{
     const ospite=isOspite(p);
     const soloLettura=chiusa||ospite;// i turni di un ospite si cambiano nel suo reparto
@@ -2731,6 +2853,11 @@ function renderTurniCorpo(wk,wrap){
     const hasShift=!cols.every(c=>!getShiftCode(wk,c.idx,p.id,c.servizio));
     const isInactive=p.attivo===false;
     if(isInactive&&!hasShift)return;// hide inactive with no shifts
+    // i filtri scelti dal manager sopra la griglia
+    if(isManager()){
+      if(FILTRO_STAFF==='senza'&&!hasShift){window._nascostiDalFiltro++;return;}
+      if(FILTRO_STAFF==='extra'&&!isExtra(p)){window._nascostiDalFiltro++;return;}
+    }
     const extra=isExtra(p);
     h+=`<tr${isInactive?' style="opacity:0.6;"':''}><td class="scol">${p.name}${ospite?`<span style="font-size:9px;color:var(--text3);margin-left:4px;" title="Turni gestiti in ${repDef(repOf(p)).label}">(${repDef(repOf(p)).label})</span>`:''}${isInactive?'<span style="font-size:9px;color:var(--text3);margin-left:4px;">(archiviato)</span>':''}${isManager()&&p.role?`<br><span style="font-size:10px;font-weight:400;color:var(--text2);">${p.role}</span>`:''}${isManager()&&!extra&&!isInactive?` <br><span style="font-size:10px;color:var(--text3);">${p.workDaysPerWeek||5}gg/sett</span>`:''}</td>`;
     cols.forEach(c=>{
@@ -2790,10 +2917,14 @@ function renderTurniCorpo(wk,wrap){
         h+='</tr>';
       });
     } else {
-      h+='<tr class="count-row"><td class="scol" style="background:var(--bg3);">N. operatori</td>';
+      h+='<tr class="count-row"><td class="scol" style="background:var(--bg3);">In servizio / servono</td>';
       cols.forEach(c=>{
         const n=staffPerVista().filter(p=>{const code=getShiftCode(wk,c.idx,p.id,c.servizio);return code&&!isFuoriServizio(code);}).length;
-        h+=`<td>${n||''}</td>`;
+        // quante persone servono quel giorno: le postazioni del fabbisogno
+        const fab=getFabGiorno(c.idx,wk.day_config[c.idx]);
+        const serve=(fab&&fab.slots)?fab.slots.length:0;
+        if(!serve){h+=`<td>${n||''}</td>`;}
+        else h+=`<td class="${n<serve?'manca':''}" title="${n<serve?'Mancano '+(serve-n)+' persone rispetto al fabbisogno':'Copertura a posto'}">${n} / ${serve}</td>`;
       });
       h+='<td style="border-left:2px solid var(--border2);background:var(--bg3);"></td>';
       h+='</tr>';
