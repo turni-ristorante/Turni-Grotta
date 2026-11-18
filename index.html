@@ -7138,11 +7138,54 @@ function renderLoginManagers(){
   }
 }
 
+// ===== LA SETTIMANA PASSATA SI NASCONDE DA SOLA =====
+// Il lunedi' alle 10:00 la settimana finita la domenica prima sparisce
+// allo staff: la soglia e' il lunedi' successivo all'inizio, piu' 10 ore.
+// Non cancella niente, toglie solo la pubblicazione.
+const ORA_NASCONDI=10;
+function sogliaNascondi(startDate){
+  if(!startDate)return null;
+  const [a,m,g]=startDate.split('-').map(Number);
+  const d=new Date(a,m-1,g,ORA_NASCONDI,0,0);
+  d.setDate(d.getDate()+7);// il lunedi' dopo la domenica di fine
+  return d;
+}
+function daNascondere(ora){
+  const adesso=ora||new Date();
+  return(G.weeks||[]).filter(w=>{
+    const s=sogliaNascondi(w.startDate);
+    if(!s||adesso<s)return false;
+    return Object.keys(REPARTI).some(r=>isPublished(w,r));
+  });
+}
+async function nascondiSettimanePassate(){
+  const da=daNascondere();
+  if(!da.length)return 0;
+  const spente={};Object.keys(REPARTI).forEach(r=>{spente[r]=false;});
+  let fatte=0;
+  for(const w of da){
+    try{
+      await sb.from('weeks').update({published:false,published_rep:spente}).eq('id',w.id);
+      w.published=false;w.published_rep=Object.assign({},spente);
+      fatte++;
+    }catch(e){/* riprovera' alla prossima apertura */}
+  }
+  return fatte;
+}
+
 async function init(){
   const ok=await dbLoad();
   document.getElementById('loading-screen').style.display='none';
   document.getElementById('app').style.display='block';
   if(!ok){document.getElementById('app').innerHTML='<div style="padding:2rem;text-align:center;"><p style="font-size:16px;font-weight:500;color:var(--red-text);">Errore di connessione.</p></div>';return;}
+  await nascondiSettimanePassate();
+  // chi lascia l'app aperta: ricontrolla ogni ora, cosi' il lunedi'
+  // mattina la settimana vecchia sparisce anche senza ricaricare
+  setInterval(function(){
+    nascondiSettimanePassate().then(function(n){
+      if(n&&role){renderTurni();if(isManager())renderWeekSelector();else renderDepWeekSelector();}
+    });
+  },3600000);
   if(riprendiAccesso())return;
   renderLogin();
   renderLoginManagers();
