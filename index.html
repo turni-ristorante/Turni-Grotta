@@ -109,6 +109,7 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .pub-badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:500;}
 .pub-badge.yes{background:var(--green-bg);color:var(--green-text);}
 .pub-badge.no{background:var(--bg3);color:var(--text3);border:0.5px solid var(--border);}
+#pub-stato{display:none;}
 .color-legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;padding:8px 12px;background:#fff;border-radius:var(--radius);border:0.5px solid var(--border);align-items:center;}
 /* il menu Azioni: in barra restano Pubblica e Azioni, il resto sta qui dentro */
 .azioni-box{position:relative;display:inline-block;}
@@ -335,6 +336,10 @@ td.cella-mod.riempi{box-shadow:inset 0 0 0 99px rgba(21,128,61,.20);}
 }
 @media (max-width:860px){
   .solo-telefono{display:block;}
+  /* Dal telefono Pubblica non sta nella barra: si prende per sbaglio.
+     Resta una targhetta che dice com'e', e il tasto sta in Azioni. */
+  #pub-btn{display:none!important;}
+  #pub-stato{display:inline-block!important;}
   .sec.dip .main-with-sidebar{display:none;}
   .sec.dip .color-legend{display:none;}
 }
@@ -1493,9 +1498,12 @@ function renderApp(){
         ${colorLegendHtml()}
         ${isManager()?`<span style="flex-grow:1;"></span>
           <button class="btn" id="pub-btn" style="font-size:11px;padding:4px 12px;font-weight:600;" onclick="pubblicaSettimanaAttiva()"></button>
+          <span id="pub-stato"></span>
           <span class="azioni-box">
             <button class="btn" style="font-size:11px;padding:4px 12px;font-weight:600;" onclick="apriAzioni(event)" aria-haspopup="true">Azioni &#9662;</button>
             <div class="azioni-menu" id="azioni-menu" role="menu">
+              <button id="azioni-pub" onclick="chiudiAzioni();pubblicaSettimanaAttiva();"></button>
+              <hr>
               <button onclick="chiudiAzioni();exportPDF();">&#128196; Esporta PDF</button>
               <button onclick="chiudiAzioni();openCompare();">&#128065; Confronta settimane</button>
               ${repDef().senzaGiornaliero?'':`<button onclick="chiudiAzioni();apriFab();">&#128203; Fabbisogno</button>`}
@@ -1689,13 +1697,54 @@ function renderApp(){
 
 let currentTab='turni';
 
-function contaRichiestePendenti(){
+// Quando e' arrivata una richiesta e quando le e' stato risposto.
+// Le richieste si fanno prima di scrivere i turni, quindi la data conta
+// piu' di qualsiasi conto sulla settimana.
+function quandoTesto(iso){
+  if(!iso)return'';
+  const d=new Date(iso);
+  if(isNaN(d.getTime()))return'';
+  return d.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'})
+    +', '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+}
+// La settimana che contiene una data: serve a sapere com'e' aperto quel
+// giorno, e quindi quale fabbisogno guardare.
+function settimanaDellaData(dateStr){
+  if(!dateStr)return null;
+  const d=new Date(dateStr+'T12:00:00');
+  return (G.weeks||[]).find(w=>{
+    if(!w.startDate)return false;
+    const g=Math.round((d-new Date(w.startDate+'T12:00:00'))/86400000);
+    return g>=0&&g<=6;
+  })||null;
+}
+function giornoNellaSettimana(w,dateStr){
+  return Math.round((new Date(dateStr+'T12:00:00')-new Date(w.startDate+'T12:00:00'))/86400000);
+}
+// Quante volte il fabbisogno di quel giorno chiede quel turno.
+// null quando non si sa: settimana non ancora aperta, o fabbisogno vuoto.
+function fabChiedeTurno(dateStr,code){
+  if(!dateStr||!code)return null;
+  const w=settimanaDellaData(dateStr);if(!w)return null;
+  const di=giornoNellaSettimana(w,dateStr);
+  if(di<0||di>6)return null;
+  const ap=((w.day_config||[])[di]==='pranzo_cena')?'pranzo_cena':'cena';
+  const f=getFabGiorno(di,ap);
+  const slots=(f&&f.slots)||[];
+  if(!slots.length)return null;
+  return slots.filter(sl=>(sl.codes||[]).indexOf(code)>=0).length;
+}
+function contaRichiesteTurno(){
   let n=0;
   (G.richieste||[]).forEach(r=>{
     if(r.stato!=='in_attesa')return;
     const s=G.allStaff.find(s=>s.id===r.staff_id);
     if(s&&repOf(s)===REP)n++;
   });
+  return n;
+}
+function contaRichiesteFerie(){
+  let n=0;
   (G.ferieRichieste||[]).forEach(r=>{
     if(r.stato!=='in_attesa')return;
     const s=G.allStaff.find(s=>s.id===r.staff_id);
@@ -1703,6 +1752,7 @@ function contaRichiestePendenti(){
   });
   return n;
 }
+function contaRichiestePendenti(){return contaRichiesteTurno()+contaRichiesteFerie();}
 
 function navGruppi(){
   const gruppi=[];
@@ -1714,8 +1764,8 @@ function navGruppi(){
   const staffItems=[['staff','Staff'],['disponibilita','Disponibilità extra']];
   if(isResponsabile())staffItems.push(['managers','Manager']);
   staffItems.push({sep:'Richieste'});
-  staffItems.push(['richieste','Richieste turno']);
-  staffItems.push(['ferie','Richieste ferie']);
+  staffItems.push(['richieste','Richieste turno',contaRichiesteTurno()]);
+  staffItems.push(['ferie','Richieste ferie',contaRichiesteFerie()]);
   gruppi.push({id:'staff',label:'Staff',items:staffItems,badge:contaRichiestePendenti()});
   gruppi.push({id:'config',label:'Configurazione',items:senzaG
     ?[['legenda','Legenda turni'],['config','Apertura']]
@@ -1748,8 +1798,9 @@ function renderNav(){
     const contieneAttivo=g.items.some(it=>Array.isArray(it)&&it[0]===currentTab);
     const voci=g.items.map(it=>{
       if(!Array.isArray(it))return `<div class="nav-sep">${it.sep}</div>`;
-      const [id,label]=it;
-      return `<button class="nav-item ${id===currentTab?'active':''}" onclick="goTab('${id}')">${label}</button>`;
+      const [id,label,quante]=it;
+      const pall=quante?`<span class="nav-dot" style="margin-left:6px;">${quante}</span>`:'';
+      return `<button class="nav-item ${id===currentTab?'active':''}" onclick="goTab('${id}')">${label}${pall}</button>`;
     }).join('');
     const dot=g.badge?`<span class="nav-dot">${g.badge}</span>`:'';
     return `<div class="nav-group">
@@ -2111,7 +2162,9 @@ async function renameWeek(id,name){const w=G.weeks.find(w=>w.id===id);if(!w)retu
 function aggiornaBottonePubblica(){
   const b=document.getElementById('pub-btn');if(!b)return;
   const w=curWeek();
-  if(!w){b.style.display='none';return;}
+  const t=document.getElementById('pub-stato');
+  const a=document.getElementById('azioni-pub');
+  if(!w){b.style.display='none';if(t)t.style.display='none';if(a)a.style.display='none';return;}
   b.style.display='';
   const pub=isPublished(w,REP);
   b.innerHTML=pub?'\u{1F441} Pubblicata':'\u270E Bozza';
@@ -2120,6 +2173,19 @@ function aggiornaBottonePubblica(){
   b.style.background=pub?'var(--green-bg)':'var(--bg3)';
   b.style.borderColor=pub?'var(--green-border)':'var(--border2)';
   b.style.color=pub?'var(--green-text)':'var(--text2)';
+  if(t){
+    t.style.removeProperty('display');
+    t.innerHTML=pub?'\u{1F441} Pubblicata':'\u270E Bozza';
+    t.style.fontSize='11px';t.style.padding='4px 10px';t.style.borderRadius='20px';t.style.fontWeight='600';
+    t.style.background=pub?'var(--green-bg)':'var(--bg3)';
+    t.style.color=pub?'var(--green-text)':'var(--text2)';
+    t.style.border='0.5px solid '+(pub?'var(--green-border)':'var(--border)');
+  }
+  if(a){
+    a.style.display='';
+    a.innerHTML=pub?'\u{1F441} Nascondi allo staff':'\u2714 Pubblica la settimana';
+    a.title=b.title;
+  }
 }
 async function pubblicaSettimanaAttiva(){
   const w=curWeek();if(!w)return;
@@ -3223,7 +3289,7 @@ function apriPannelloCasella(){
         h+='<button type="button" class="altri" onclick="PAN_ALTRI=true;apriPannelloCasella();">Tutti gli altri turni &#9662;</button>';
       }
     }
-    const speciali=turniSceglibili(val).filter(s=>s.is_off||s.is_ferie).map(s=>s.code);
+    const speciali=turniSceglibili(val).filter(s=>s.is_off||s.is_ferie||(s.code||'').toUpperCase()==='MALATTIA').map(s=>s.code);
     h+='<div class="sigle" style="margin-top:7px;">';
     speciali.forEach(c=>{h+='<button type="button" class="'+(c===val?'scelto':'')+'" style="'+shiftColorStyle(c)+'" onclick="scegliTurno(\''+c+'\')">'+c+'</button>';});
     h+='<button type="button" class="neutro" onclick="scegliTurno(\'\')">Svuota</button></div>';
@@ -5362,6 +5428,7 @@ function buildFerieRichiesteHtml(){
           <div style="flex:1;min-width:200px;">
             <div style="font-weight:500;">${staff?staff.name:'?'}</div>
             <div style="font-size:11px;color:var(--text2);margin-top:4px;">${giorni.length} giorn${giorni.length===1?"o":"i"} richiest${giorni.length===1?"o":"i"}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;">Chiesta: <b style="color:var(--text);">${quandoTesto(r.created_at)||'&mdash;'}</b></div>
             ${(()=>{
               // Saldo ferie: cosa resta ora e cosa resterebbe approvando tutto
               if(!staff)return'';
@@ -5422,6 +5489,9 @@ function buildFerieRichiesteHtml(){
           <span style="font-size:11px;color:var(--text2);">${tot} giorn${tot===1?"o":"i"}</span>
           <span style="font-size:11px;font-weight:600;color:${statoColor};">${statoLabel}</span>
           <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="riapriFerie('${r.id}')">↺ Riapri</button>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:5px;">
+          Chiesta ${quandoTesto(r.created_at)||'&mdash;'}${r.updated_at?' &middot; risposta '+quandoTesto(r.updated_at):''}
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:7px;">${pillole}</div>
         ${r.nota?`<p style="font-size:11px;color:var(--text2);margin-top:6px;">&#128172; ${r.nota}</p>`:''}
@@ -6209,6 +6279,10 @@ function renderRichiesteManager(el){
       const staff=G.allStaff.find(s=>s.id===r.staff_id);
       const dateObj=new Date(r.data+'T12:00:00');
       const dateLabel=dateObj.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
+      const chiedeOff=String(r.turno_richiesto||'').toUpperCase()==='OFF';
+      const suoTurno=!!(staff&&(staff.canDo||[]).indexOf(r.turno_richiesto)>=0);
+      const quanteFab=chiedeOff?null:fabChiedeTurno(r.data,r.turno_richiesto);
+      const giornoBreve=dateObj.toLocaleDateString('it-IT',{weekday:'long'});
       return `<div style="background:#fff;border:0.5px solid var(--orange-border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <div style="flex:1;">
@@ -6220,6 +6294,14 @@ function renderRichiesteManager(el){
             <button class="btn success" style="font-size:11px;padding:4px 10px;" onclick="rispondiRichiesta('${r.id}','approvata')">✓ Approva</button>
             <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="rispondiRichiesta('${r.id}','rifiutata')">✗ Rifiuta</button>
           </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;padding:7px 10px;background:var(--bg3);border-radius:4px;">
+          <span style="font-size:11px;color:var(--text2);">Chiesta: <b style="color:var(--text);">${quandoTesto(r.created_at)||'&mdash;'}</b></span>
+          ${chiedeOff?'':`<span style="font-size:11px;color:var(--text2);">${r.turno_richiesto} &egrave; tra i suoi turni:
+            <b style="color:${suoTurno?'var(--green-text)':'var(--orange-text)'};">${suoTurno?'s\u00ec':'no'}</b></span>`}
+          ${chiedeOff?'':`<span style="font-size:11px;color:var(--text2);">Il fabbisogno di ${giornoBreve} chiede un ${r.turno_richiesto}:
+            <b style="color:${quanteFab===null?'var(--text2)':quanteFab>0?'var(--green-text)':'var(--orange-text)'};">${
+              quanteFab===null?'non si sa':quanteFab>0?('s\u00ec, '+quanteFab):'no'}</b></span>`}
         </div>
         ${r.nota?`<p style="font-size:11px;color:var(--text2);margin-top:6px;padding:6px 8px;background:var(--bg3);border-radius:4px;">&#128172; ${r.nota}</p>`:''}
       </div>`;
@@ -6244,6 +6326,9 @@ function renderRichiesteManager(el){
           ${r.esclusa_conteggio?'<span style="font-size:10px;color:var(--blue-text);background:var(--blue-bg);padding:1px 7px;border-radius:20px;">non conteggiata</span>':''}
           <button class="btn" style="font-size:10px;padding:3px 8px;" onclick="riapriRichiesta('${r.id}')" title="Riporta in attesa">↺ Riapri</button>
           ${!r.esclusa_conteggio?`<button class="btn" style="font-size:10px;padding:3px 8px;" onclick="escludiConteggio('${r.id}')" title="Non conta per il limite mensile">⊘ Non contare</button>`:''}
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:5px;">
+          Chiesta ${quandoTesto(r.created_at)||'&mdash;'}${r.updated_at?' &middot; '+(r.stato==='approvata'?'approvata':'rifiutata')+' '+quandoTesto(r.updated_at):''}
         </div>
         ${r.nota?`<p style="font-size:11px;color:var(--text2);margin-top:6px;">&#128172; ${r.nota}</p>`:''}
         ${r.risposta_nota?`<p style="font-size:11px;color:var(--text2);margin-top:5px;padding:5px 8px;background:#fff;border-radius:4px;">Tua risposta: ${r.risposta_nota}</p>`:''}
