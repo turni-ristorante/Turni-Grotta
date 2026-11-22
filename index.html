@@ -234,6 +234,65 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 .tel-post{width:122px;flex-shrink:0;}
 .tel-post-no{font-size:10px;letter-spacing:.04em;color:var(--text3);text-transform:uppercase;}
 .tel-sez .day-nav{margin-bottom:8px;}
+/* ===== manager dal telefono: barra in basso e vista Giorno ===== */
+#mgr-telefono{display:none;}
+#barra-tel{display:none;position:fixed;left:0;right:0;bottom:0;z-index:300;background:#fff;
+  border-top:0.5px solid var(--border);padding:5px 2px calc(6px + env(safe-area-inset-bottom,0px));}
+#barra-tel button{flex-grow:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  min-height:50px;padding:5px 0;background:none;border:0;cursor:pointer;font-family:inherit;
+  font-size:11px;color:var(--text2);position:relative;}
+#barra-tel button.sel{color:var(--blue-text);font-weight:600;}
+#barra-tel .ico{font-size:17px;line-height:1;}
+#barra-tel .nav-dot{position:absolute;top:1px;right:22%;}
+.tel-gg-str{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px;}
+.tel-gg-b{flex-shrink:0;min-width:46px;height:50px;border:0.5px solid var(--border2);background:#fff;
+  border-radius:9px;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1px;}
+.tel-gg-b.sel{border:1.5px solid var(--blue-text);background:var(--blue-bg);}
+.tel-gg-b .g{font-size:10px;color:var(--text2);}
+.tel-gg-b .n{font-size:15px;font-weight:600;}
+.tel-gg-b.sel .g,.tel-gg-b.sel .n{color:var(--blue-text);}
+.tel-sw{display:flex;background:var(--bg3);border-radius:9px;padding:3px;gap:3px;margin-bottom:10px;}
+.tel-sw button{flex:1;min-height:36px;border:0;background:none;border-radius:7px;font-family:inherit;
+  font-size:13px;color:var(--text2);cursor:pointer;}
+.tel-sw button.sel{background:#fff;color:var(--text);font-weight:600;box-shadow:0 1px 3px rgba(40,38,30,.14);}
+.tel-cop{background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);padding:11px 13px;margin-bottom:10px;}
+.tel-cop-t{display:flex;align-items:baseline;gap:8px;margin-bottom:7px;}
+.tel-cop-g{font-size:15px;font-weight:600;}
+.tel-cop-n{margin-left:auto;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;}
+.tel-cop-m{display:flex;flex-wrap:wrap;gap:6px;}
+.tel-manca{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--red-bg);color:var(--red-text);}
+.tel-ok{font-size:11px;font-weight:600;color:var(--green-text);}
+.tel-r-m{display:flex;align-items:center;gap:9px;padding:9px 11px;border-bottom:0.5px solid var(--border);cursor:pointer;}
+.tel-r-m:last-child{border-bottom:none;}
+.tel-r-m.sel{background:var(--blue-bg);box-shadow:inset 2px 0 0 var(--blue-text);}
+.tel-riga.cella-mod.sel{background:var(--blue-bg);}
+.tel-r-m .nm{flex-grow:1;min-width:0;font-size:14px;font-weight:500;}
+.tel-r-m .or{font-size:12px;color:var(--text2);font-variant-numeric:tabular-nums;}
+.tel-r-m .sg{min-width:54px;text-align:center;font-size:12px;font-weight:700;padding:5px 0;border-radius:6px;}
+.tel-cambio{display:flex;align-items:center;gap:11px;width:100%;min-height:58px;padding:9px 12px;margin-top:10px;
+  background:#fff;border:0.5px solid var(--border2);border-radius:var(--radius);cursor:pointer;font-family:inherit;text-align:left;}
+.tel-cambio .ic{flex-shrink:0;width:34px;height:34px;border-radius:9px;background:var(--bg3);
+  display:flex;align-items:center;justify-content:center;font-size:16px;}
+.tel-cambio .tt{flex-grow:1;min-width:0;}
+.tel-cambio .t1{display:block;font-size:14px;font-weight:600;}
+.tel-cambio .t2{display:block;font-size:11px;color:var(--text3);margin-top:1px;}
+.cam-passo{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--text2);margin:10px 0 5px;}
+.cam-riga{display:flex;align-items:center;gap:9px;padding:9px 11px;border:0.5px solid var(--border);
+  border-radius:8px;margin-bottom:5px;cursor:pointer;background:#fff;}
+.cam-riga.sel{border:1.5px solid var(--blue-text);background:var(--blue-bg);}
+.cam-riga .nm{flex-grow:1;min-width:0;font-size:14px;font-weight:500;}
+.cam-riga .sot{display:block;font-size:11px;font-weight:400;color:var(--text2);margin-top:1px;}
+.cam-riga .sg{min-width:50px;text-align:center;font-size:11px;font-weight:700;padding:4px 0;border-radius:6px;}
+.cam-tag{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap;}
+.cam-tag.ok{background:var(--green-bg);color:var(--green-text);}
+.cam-tag.forse{background:var(--yellow-bg);color:var(--yellow-text);}
+.cam-tag.no{background:var(--bg3);color:var(--text3);}
+.cam-chip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px;}
+.cam-chip button{min-height:38px;padding:0 12px;border:0.5px solid var(--border2);background:#fff;
+  border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;}
+.cam-chip button.sel{border:1.5px solid var(--blue-text);background:var(--blue-bg);color:var(--blue-text);font-weight:600;}
+.cam-fondo{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:10px;border-top:0.5px solid var(--border);}
 /* === SECONDO GIRO: bozza, filtri, copertura === */
 .wrap.bozza{background:repeating-linear-gradient(45deg,#fdf6e3,#fdf6e3 5px,#fffdf5 5px,#fffdf5 11px);}
 .fascetta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-radius:var(--radius);
@@ -258,6 +317,9 @@ td.cella-mod .sig{display:inline-block;width:66px;font-size:11px;padding:3px 2px
 td.cella-mod.sel{outline:2px solid var(--blue-text);outline-offset:-2px;}
 td.cella-mod.bersaglio{outline:2px dashed #15803d;outline-offset:-2px;}
 td.cella-mod.riempi{box-shadow:inset 0 0 0 99px rgba(21,128,61,.20);}
+td.cambiata{position:relative;}
+td.cambiata::after{content:'';position:absolute;top:2px;right:2px;width:7px;height:7px;
+  border-radius:50%;background:#1a56db;box-shadow:0 0 0 1.5px #fff;}
 .maniglia{position:absolute;right:-4px;bottom:-4px;width:11px;height:11px;background:#15803d;
   border:2px solid #fff;border-radius:3px;cursor:crosshair;touch-action:none;z-index:4;}
 .fantasma{position:fixed;z-index:400;pointer-events:none;opacity:.92;font-size:11px;font-weight:600;
@@ -336,6 +398,16 @@ td.cella-mod.riempi{box-shadow:inset 0 0 0 99px rgba(21,128,61,.20);}
 }
 @media (max-width:860px){
   .solo-telefono{display:block;}
+  body.tel-barra{padding-bottom:72px;}
+  body.tel-barra #barra-tel{display:flex;}
+  body.tel-mgr #mgr-telefono{display:block;}
+  body.tel-mgr .main-with-sidebar{display:none;}
+  body.tel-mgr #riga-filtri{display:none;}
+  body.tel-mgr #main-nav{display:none;}
+  /* Il pannello della casella, sul telefono, sale dal basso */
+  body.tel-barra .pan{position:fixed!important;left:0!important;right:0!important;bottom:72px!important;
+    top:auto!important;width:auto!important;max-width:none!important;border-radius:16px 16px 0 0;
+    max-height:70vh;overflow:auto;box-shadow:0 -10px 30px rgba(32,30,24,.22);}
   /* Dal telefono Pubblica non sta nella barra: si prende per sbaglio.
      Resta una targhetta che dice com'e', e il tasto sta in Azioni. */
   #pub-btn{display:none!important;}
@@ -732,7 +804,7 @@ let G={
   richieste:[],
   ferieFinestre:[],
   ferieRichieste:[],
-  staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],regole:[],roleRules:[],posRules:[],managers:[],snapshots:{}};
+  staff:[],shifts:[],allStaff:[],allShifts:[],rawConfig:[],weeks:[],currentWeekId:'',managerPwd:'1234',fabbisogno:{},equivalenze:[],sostituzioni:{},cambi:{},regole:[],roleRules:[],posRules:[],managers:[],snapshots:{}};
 let role='';let currentManager=null;let currentDipendente=null;let syncStatus='';let dragSrcIdx=null;let selectedStaffId=null;
 
 // applyReparto ricalcola tutte le viste derivate dal reparto attivo.
@@ -755,6 +827,8 @@ function applyReparto(r){
   const asJson=(b,fb)=>{const v=raw(b);if(!v)return fb;try{return JSON.parse(v);}catch(e){return fb;}};
   G.fabbisogno=asJson('fabbisogno',{});
   G.equivalenze=asJson('equivalenze',[]);
+  G.sostituzioni=asJson('sostituzioni',{});
+  G.cambi=asJson('cambi',{});
   G.regole=asJson('regole',[]);
   G.roleRules=asJson('roleRules',[]);
   G.posRules=asJson('posRules',[]);
@@ -1516,7 +1590,7 @@ function renderApp(){
       </div>
       <div id="draft-panel" class="draft-panel" style="display:none;"><span>📋 Hai una bozza salvata per questa settimana</span><button class="btn purple" style="font-size:11px;padding:4px 10px;" onclick="restoreDraft()">Ripristina bozza</button></div>
       <div id="draft-alerts"></div>
-      ${isManager()?'<div id="avviso-copia"></div><div id="riga-filtri"></div>':''}
+      ${isManager()?'<div id="avviso-copia"></div><div id="riga-filtri"></div><div id="mgr-telefono"></div>':''}
       ${isManager()?'':'<div id="vista-telefono" class="solo-telefono"></div>'}
       <div class="main-with-sidebar">
         <div class="main-content"><div class="wrap wrap-fisso" id="turni-wrap"></div></div>
@@ -1975,6 +2049,7 @@ function goTab(t){
   if(t==='staff-archiviato')renderStaffArchiviato();
   if(t==='archivio')renderArchive();
   if(t==='managers')renderManagers();
+  if(typeof aggiornaModoTelefono==='function')aggiornaModoTelefono();
 }
 
 // La legenda colori si costruisce dai turni del reparto attivo,
@@ -2175,11 +2250,13 @@ function aggiornaBottonePubblica(){
   b.style.color=pub?'var(--green-text)':'var(--text2)';
   if(t){
     t.style.removeProperty('display');
-    t.innerHTML=pub?'\u{1F441} Pubblicata':'\u270E Bozza';
-    t.style.fontSize='11px';t.style.padding='4px 10px';t.style.borderRadius='20px';t.style.fontWeight='600';
-    t.style.background=pub?'var(--green-bg)':'var(--bg3)';
+    // Scritta, non tasto: niente cornice e niente sfondo, cosi' non la
+    // si scambia per qualcosa da premere.
+    t.innerHTML='<span style="display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;background:'
+      +(pub?'var(--green-text)':'var(--text3)')+';"></span>'+(pub?'Pubblicata':'Bozza');
+    t.style.fontSize='11px';t.style.padding='0';t.style.fontWeight='600';
+    t.style.background='none';t.style.border='0';
     t.style.color=pub?'var(--green-text)':'var(--text2)';
-    t.style.border='0.5px solid '+(pub?'var(--green-border)':'var(--border)');
   }
   if(a){
     a.style.display='';
@@ -2724,6 +2801,593 @@ function renderFasceTelefono(wk){
   box.innerHTML=h||'<p class="tel-nota">Nessuna fascia per questo giorno.</p>';
 }
 
+// ===== MANAGER DAL TELEFONO =====
+// Dal telefono il manager non compila: guarda la giornata e aggiusta.
+// Quindi al posto della griglia, che su 390px non si legge, una vista
+// per giorno; la griglia resta a un tocco di distanza, su "Altro".
+let VISTA_TEL='giorno';   // giorno | settimana | dafare | altro
+let TEL_MODO='turni';     // dentro Giorno: turni | postazioni
+
+function telManager(){return isManager()&&window.innerWidth<=860;}
+
+function aggiornaModoTelefono(){
+  const tel=telManager();
+  document.body.classList.toggle('tel-barra',tel);
+  const inGiorno=tel&&VISTA_TEL==='giorno'&&currentTab==='turni';
+  document.body.classList.toggle('tel-mgr',inGiorno);
+  renderBarraTel();
+  if(inGiorno)renderMgrTelefono(curWeek());
+}
+
+function vaiVistaTel(v){
+  VISTA_TEL=v;
+  chiudiPannello();
+  if(v==='giorno'||v==='settimana'){if(currentTab!=='turni')goTab('turni');}
+  else if(v==='dafare'){if(currentTab!=='richieste')goTab('richieste');}
+  aggiornaModoTelefono();
+  if(v==='giorno')window.scrollTo(0,0);
+}
+
+function renderBarraTel(){
+  let b=document.getElementById('barra-tel');
+  if(!telManager()){if(b)b.innerHTML='';return;}
+  if(!b){b=document.createElement('div');b.id='barra-tel';document.body.appendChild(b);}
+  const n=contaRichiestePendenti();
+  const voci=[['giorno','\u{1F4C5}','Giorno'],['settimana','\u{1F5D3}','Settimana'],
+              ['dafare','\u2714','Da fare'],['altro','\u2699','Altro']];
+  b.innerHTML=voci.map(function(v){
+    const sel=VISTA_TEL===v[0]?' sel':'';
+    const dot=(v[0]==='dafare'&&n)?'<span class="nav-dot">'+n+'</span>':'';
+    return '<button type="button" class="'+sel.trim()+'" onclick="vaiVistaTel(\''+v[0]+'\')">'+
+           '<span class="ico">'+v[1]+'</span><span>'+v[2]+'</span>'+dot+'</button>';
+  }).join('');
+}
+
+// L'ora da cui parte un turno, per mettere in fila chi entra prima.
+function inizioTurno(code){
+  const sh=getShift(code);if(!sh)return 9999;
+  const b=blocchiTurno(sh);
+  return b.length?b[0][0]:9999;
+}
+
+function renderMgrTelefono(wk){
+  const box=document.getElementById('mgr-telefono');
+  if(!box)return;
+  if(!wk){box.innerHTML='<p class="tel-nota">Nessuna settimana aperta.</p>';return;}
+  const giorni=giorniAperti(wk);
+  const oggi=indiceOggi(wk);
+  if(!giorni.find(d=>d.idx===wk.selected_day))
+    wk.selected_day=(oggi>=0?oggi:(giorni[0]?giorni[0].idx:0));
+  const di=wk.selected_day;
+  let h='<div class="tel-gg-str">';
+  giorni.forEach(function(d){
+    h+='<button type="button" class="tel-gg-b'+(d.idx===di?' sel':'')+'" onclick="telVaiGiorno('+d.idx+')">'+
+       '<span class="g">'+GIORNI_BREVI[d.idx]+'</span><span class="n">'+String(numeroGiorno(wk,d.idx)).trim()+'</span></button>';
+  });
+  h+='</div>';
+  h+='<div class="tel-sw">'+
+     '<button type="button" class="'+(TEL_MODO==='turni'?'sel':'')+'" onclick="telModo(\'turni\')">Turni</button>'+
+     (repDef().senzaGiornaliero?'':'<button type="button" class="'+(TEL_MODO==='postazioni'?'sel':'')+'" onclick="telModo(\'postazioni\')">Postazioni</button>')+
+     '</div>';
+  h+=(TEL_MODO==='postazioni'&&!repDef().senzaGiornaliero)?telPostazioni(wk,di):telTurni(wk,di);
+  box.innerHTML=h;
+}
+function telVaiGiorno(di){
+  const wk=curWeek();if(!wk)return;
+  wk.selected_day=di;chiudiPannello();SEL=null;
+  renderMgrTelefono(wk);
+}
+function telModo(m){TEL_MODO=m;chiudiPannello();SEL=null;renderMgrTelefono(curWeek());}
+
+// --- Giorno, i turni ---
+function telTurni(wk,di){
+  const r=coperturaGiorno(wk,di);
+  const manca=r.serve&&(r.mancanti.length||r.n<r.serve);
+  let h='<div class="tel-cop" onclick="telApriCopertura('+di+')">'+
+    '<div class="tel-cop-t"><span class="tel-cop-g">'+DAY_NAMES[di]+String(numeroGiorno(wk,di))+'</span>'+
+    (r.serve?'<span class="tel-cop-n" style="color:'+(manca?'var(--red-text)':'var(--green-text)')+';">'+r.n+' / '+r.serve+'</span>'
+            :'<span class="tel-cop-n" style="color:var(--text2);">'+r.n+'</span>')+'</div>';
+  h+='<div class="tel-cop-m">';
+  if(!r.serve){
+    h+='<span style="font-size:11px;color:var(--text3);">Fabbisogno non impostato per questo giorno</span>';
+  }else if(!r.mancanti.length){
+    h+='<span class="tel-ok">Il fabbisogno &egrave; coperto</span>';
+    (r.sostituiti||[]).forEach(function(x){
+      h+='<span class="tel-manca" style="background:var(--blue-bg);color:var(--blue-text);">1 &times; '+x.slot+' sostituito</span>';
+    });
+  }else{
+    const gruppi={};
+    r.mancanti.forEach(function(cod){const k=cod.join(' o ')||'(turno non indicato)';gruppi[k]=(gruppi[k]||0)+1;});
+    Object.keys(gruppi).forEach(function(k){h+='<span class="tel-manca">Manca '+gruppi[k]+' &times; '+k+'</span>';});
+    (r.sostituiti||[]).forEach(function(x){
+      h+='<span class="tel-manca" style="background:var(--blue-bg);color:var(--blue-text);">1 &times; '+x.slot+' sostituito</span>';
+    });
+  }
+  h+='</div></div>';
+
+  // chi e' in servizio, in ordine di entrata
+  const righe=[];
+  personePerVista().forEach(function(p){
+    const tipo=wk.day_config[di];
+    const campi=(tipo==='pranzo_cena')?[['pranzo','_P'],['cena','_C']]:[[null,'']];
+    campi.forEach(function(c){
+      const code=getShiftCode(wk,di,p.id,c[0]);
+      if(!code||isFuoriServizio(code))return;
+      righe.push({p:p,code:code,serv:c[0]||'',ini:inizioTurno(code)});
+    });
+  });
+  righe.sort(function(a,b){return a.ini-b.ini||a.p.name.localeCompare(b.p.name);});
+  h+='<div class="tel-occhiello" style="margin-top:4px;">In servizio</div>';
+  if(!righe.length){
+    h+='<div class="tel-lista"><div class="tel-riga"><span class="tel-ore fiacco">Nessuno in turno</span></div></div>';
+  }else{
+    h+='<div class="tel-lista">'+righe.map(function(x){
+      const sh=getShift(x.code);
+      const ore=orariTurno(sh).join(' &middot; ');
+      const scelta=SEL&&SEL.tipo==='turno'&&SEL.di===di&&SEL.pid===x.p.id&&(SEL.serv||'')===x.serv;
+      const cam=cambioDi(wk,di,x.p.id,x.serv);
+      return '<div class="tel-r-m cella-mod'+(scelta?' sel':'')+'" data-cella="'+di+'|'+x.p.id+'|'+x.serv+'"'+
+        (cam?' title="'+cambioTesto(cam)+'"':'')+'>'+
+        '<span class="nm">'+x.p.name+
+        (cam?' <span style="font-size:10px;font-weight:600;color:var(--blue-text);">cambiato</span>':'')+(x.serv?' <em style="font-style:normal;color:var(--text3);font-size:10px;">'+x.serv+'</em>':'')+'</span>'+
+        '<span class="or">'+(ore||'&mdash;')+'</span>'+
+        '<span class="sg" style="'+shiftColorStyle(x.code)+'">'+x.code+'</span></div>';
+    }).join('')+'</div>';
+  }
+  h+='<button type="button" class="tel-cambio" onclick="apriCambioTurno('+di+')">'+
+     '<span class="ic">\u21C4</span><span class="tt"><span class="t1">Cambio turno</span>'+
+     '<span class="t2">qualcuno non c\u2019&egrave;: trova chi lo copre</span></span>'+
+     '<span style="color:var(--text3);">\u203A</span></button>';
+  h+='<p class="tel-nota">Tocca una persona per cambiarle il turno. I turni mancanti si riempiono da Settimana.</p>';
+  return h;
+}
+function telApriCopertura(di){
+  const el=document.querySelector('#mgr-telefono .tel-cop');
+  if(el)apriCopertura(di,el);
+}
+
+// --- Giorno, le postazioni ---
+function telPostazioni(wk,di){
+  const tipo=wk.day_config[di];
+  const fasce=fasceDelGiorno(wk,di);
+  if(!fasce.length)return'<p class="tel-nota">Nessuna fascia per questo giorno.</p>';
+  let h='';
+  fasce.forEach(function(f){
+    const gente=personePerVista().filter(function(q){return personInFascia(wk,di,q.id,f,tipo);});
+    h+='<div class="tel-fascia"><div class="tel-fascia-t">'+
+       '<span class="tel-fascia-o">'+String(f.orario||'').replace('/',' &ndash; ')+'</span>'+
+       '<span class="tel-fascia-l">'+f.label+'</span>'+
+       '<span class="tel-fascia-n">'+gente.length+'</span></div>';
+    if(!gente.length)h+='<div class="tel-riga"><span class="tel-ore fiacco">Nessuno</span></div>';
+    const perRuolo={},senza=[];
+    gente.forEach(function(q){
+      const r=(wk.role_assign||{})[di+'_'+f.id+'_'+q.id]||'';
+      if(r){(perRuolo[r]=perRuolo[r]||[]).push(q);}else senza.push(q);
+    });
+    const ruoli=ruoliPerVista().filter(function(r){return perRuolo[r];});
+    Object.keys(perRuolo).forEach(function(r){if(ruoli.indexOf(r)<0)ruoli.push(r);});
+    ruoli.forEach(function(r){
+      perRuolo[r].forEach(function(q){
+        const key=di+'_'+f.id+'_'+q.id;
+        h+='<div class="tel-riga cella-mod" data-ruolo="'+key+'" style="cursor:pointer;">'+
+           '<span class="tel-post"><span class="tel-ruolo">'+r+'</span></span>'+
+           '<span class="tel-nome">'+q.name+'</span></div>';
+      });
+    });
+    senza.forEach(function(q){
+      const key=di+'_'+f.id+'_'+q.id;
+      h+='<div class="tel-riga cella-mod" data-ruolo="'+key+'" style="cursor:pointer;">'+
+         '<span class="tel-post"><span class="tel-post-no">Da assegnare</span></span>'+
+         '<span class="tel-nome" style="color:var(--text3);font-weight:400;">'+q.name+'</span></div>';
+    });
+    h+='</div>';
+  });
+  h+='<p class="tel-nota">Tocca una riga per cambiare la postazione di quella persona.</p>';
+  return h;
+}
+
+// --- Turni cambiati dopo la pubblicazione ---
+// Finche' la settimana e' bozza si cambia quello che si vuole: nessuno
+// l'ha ancora vista. Da quando e' pubblicata ogni modifica lascia un
+// segno sulla casella e un avviso alla persona interessata.
+let salvaCambiTimer=null;
+function cambiSettimana(wk){return (G.cambi||{})[wk.id]||[];}
+function registraCambio(wk,di,pid,serv,da,a){
+  if(!wk||!isPublished(wk,REP))return;
+  if((da||'')===(a||''))return;
+  if(!G.cambi)G.cambi={};
+  const tutti=G.cambi[wk.id]||[];
+  const vecchio=tutti.find(function(x){
+    return x.di===di&&x.pid===pid&&(x.serv||'')===(serv||'');
+  });
+  const lista=tutti.filter(function(x){return x!==vecchio;});
+  // Se quella casella era gia' stata cambiata, il "prima" resta quello
+  // che la persona aveva visto l'ultima volta. E se la rimetti com'era,
+  // non c'e' piu' niente da segnalare.
+  const partenza=vecchio?vecchio.da:(da||'');
+  if(partenza!==(a||'')){
+    lista.push({di:di,pid:pid,serv:serv||'',da:partenza,a:a||'',
+      ts:new Date().toISOString(),chi:(currentManager&&currentManager.name)||'Manager'});
+  }
+  G.cambi[wk.id]=lista.slice(-200);
+  Object.keys(G.cambi).forEach(function(id){
+    if(!G.weeks.some(function(w){return w.id===id;}))delete G.cambi[id];
+  });
+  clearTimeout(salvaCambiTimer);
+  salvaCambiTimer=setTimeout(function(){dbSaveConfig(configKey('cambi'),G.cambi);},1200);
+}
+function cambioDi(wk,di,pid,serv){
+  if(!wk)return null;
+  return cambiSettimana(wk).find(function(x){
+    return x.di===di&&x.pid===pid&&(x.serv||'')===(serv||'');
+  })||null;
+}
+function cambioTesto(c){
+  if(!c)return'';
+  const q=new Date(c.ts);
+  const quando=isNaN(q.getTime())?'':q.toLocaleDateString('it-IT',{day:'numeric',month:'short'})+
+    ' alle '+q.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  return 'Cambiato il '+quando+(c.chi?' da '+c.chi:'')+': '+(c.da||'vuoto')+' \u2192 '+(c.a||'vuoto');
+}
+// Quello che una persona non ha ancora visto. Il "visto" sta sul
+// telefono di chi guarda: non serve scriverlo sul server.
+function chiaveVisti(pid){return 'turni_visti_'+pid;}
+function ultimoVisto(pid){
+  try{return localStorage.getItem(chiaveVisti(pid))||'';}catch(e){return'';}
+}
+function segnaVisti(pid){
+  try{localStorage.setItem(chiaveVisti(pid),new Date().toISOString());}catch(e){}
+  renderTurni();
+}
+function cambiDaVedere(wk,pid){
+  const visto=ultimoVisto(pid);
+  return cambiSettimana(wk).filter(function(x){
+    return x.pid===pid&&(!visto||x.ts>visto);
+  });
+}
+// L'avviso in cima ai turni dell'operatore.
+function avvisoCambi(wk){
+  const box=document.getElementById('draft-alerts');
+  if(!box)return;
+  if(isManager()||!currentDipendente||!wk||!isPublished(wk,repOf(currentDipendente))){
+    if(!isManager())box.innerHTML='';
+    return;
+  }
+  const miei=cambiDaVedere(wk,currentDipendente.id);
+  if(!miei.length){box.innerHTML='';return;}
+  const righe=miei.map(function(x){
+    const d=new Date(x.ts);
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin-top:4px;">'+
+      '<b>'+DAY_NAMES[x.di]+String(numeroGiorno(wk,x.di))+'</b>'+
+      '<span style="color:var(--text2);">'+(x.da||'niente')+' \u2192</span>'+
+      '<span class="tel-sigla" style="width:auto;padding:3px 9px;'+shiftColorStyle(x.a)+'">'+(x.a||'niente')+'</span>'+
+      '<span style="color:var(--text3);font-size:11px;">'+d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})+'</span></div>';
+  }).join('');
+  box.innerHTML='<div style="background:var(--yellow-bg);border:0.5px solid var(--yellow-border);border-radius:var(--radius);padding:11px 13px;margin-bottom:10px;">'+
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
+    '<b style="font-size:13px;color:var(--yellow-text);">&#9888; '+(miei.length===1?'Un turno \u00e8 cambiato':miei.length+' turni sono cambiati')+'</b>'+
+    '<span style="flex-grow:1;"></span>'+
+    '<button class="btn" style="font-size:11px;padding:4px 12px;" onclick="segnaVisti(\''+currentDipendente.id+'\')">Ho visto</button></div>'+
+    righe+'</div>';
+}
+
+// --- Sostituzioni: un extra al posto di un turno che manca ---
+// Un extra entra con un turno SUO (E5), non col turno scoperto (C8):
+// per il conteggio sono due codici diversi, quindi il legame va scritto.
+// Sta nella config, chiave "sostituzioni", una voce per settimana:
+//   { "<idSettimana>": { "<giorno>": [ {slot:"C8", pid:"e1", code:"E5"} ] } }
+function sostDelGiorno(wk,di){
+  const w=(G.sostituzioni||{})[wk.id];
+  return (w&&w[String(di)])||[];
+}
+function scriviSost(wk,di,lista){
+  if(!G.sostituzioni)G.sostituzioni={};
+  if(!G.sostituzioni[wk.id])G.sostituzioni[wk.id]={};
+  if(lista&&lista.length)G.sostituzioni[wk.id][String(di)]=lista;
+  else delete G.sostituzioni[wk.id][String(di)];
+  if(!Object.keys(G.sostituzioni[wk.id]).length)delete G.sostituzioni[wk.id];
+  // via le settimane che non esistono piu', cosi' la riga non cresce a vuoto
+  Object.keys(G.sostituzioni).forEach(function(id){
+    if(!G.weeks.some(function(w){return w.id===id;}))delete G.sostituzioni[id];
+  });
+  dbSaveConfig(configKey('sostituzioni'),G.sostituzioni);
+}
+function aggiungiSost(wk,di,slot,pid,code){
+  const lista=sostDelGiorno(wk,di).filter(function(x){return x.pid!==pid;});
+  lista.push({slot:slot,pid:pid,code:code});
+  scriviSost(wk,di,lista);
+}
+function togliSost(wk,di,pid){
+  const prima=sostDelGiorno(wk,di);
+  const dopo=prima.filter(function(x){return x.pid!==pid;});
+  if(dopo.length!==prima.length)scriviSost(wk,di,dopo);
+}
+
+// Quando si mette un turno a un EXTRA e quel giorno manca qualcosa che
+// lui puo' coprire, si chiede: al posto di quale, o si aggiunge?
+function forseSostituisce(di,pid,code){
+  const wk=curWeek();if(!wk)return;
+  const p=personaDi(pid);
+  if(!p||!isExtra(p))return;
+  if(!code||isFuoriServizio(code)){togliSost(wk,di,pid);return;}
+  const r=coperturaGiorno(wk,di);
+  // i turni che mancano davvero, al netto di quelli gia' sostituiti
+  const mancanti=r.mancanti||[];
+  if(!mancanti.length){togliSost(wk,di,pid);return;}
+  // uno stesso codice puo' mancare piu' volte: lo chiedo una volta sola
+  const codici=[];
+  mancanti.forEach(function(cod){
+    (cod||[]).forEach(function(c){if(codici.indexOf(c)<0)codici.push(c);});
+  });
+  if(!codici.length)return;
+  // prima quelli che il turno dell'extra copre davvero: un E5 della sera
+  // non puo' stare al posto di un P2 di pranzo
+  const vicini=codici.filter(function(c){return turniSiToccano(wk,di,code,c);});
+  const lontani=codici.filter(function(c){return vicini.indexOf(c)<0;});
+  if(!vicini.length&&!lontani.length)return;
+  apriSceltaSost(di,pid,code,vicini,lontani);
+}
+function chiudiSost(){const p=document.getElementById('pan-sost');if(p)p.remove();}
+// Due turni si toccano se, in quel giorno, passano per almeno una
+// fascia in comune.
+function turniSiToccano(wk,di,a,b){
+  const fasce=fasceDelGiorno(wk,di);
+  if(!fasce.length)return true;
+  return fasce.some(function(f){return shiftInFascia(a,f.id)&&shiftInFascia(b,f.id);});
+}
+function apriSceltaSost(di,pid,code,codici,lontani){
+  chiudiSost();
+  const wk=curWeek();const p=personaDi(pid);
+  const pan=document.createElement('div');pan.className='pan';pan.id='pan-sost';
+  let h='<h4>'+(p?p.name:'')+' &egrave; un extra</h4>';
+  h+='<div class="sub">'+DAY_NAMES[di]+String(numeroGiorno(wk,di))+': entra con <b>'+code+'</b>, e quel giorno '+
+     (codici.length===1?('manca un <b>'+codici[0]+'</b>.'):'mancano dei turni.')+'</div>';
+  const tasto=function(c){
+    return '<button type="button" onclick="confermaSost('+di+',\''+pid+'\',\''+c+'\',\''+code+'\')">'+c+'</button>';
+  };
+  if(codici.length){
+    h+='<div class="cam-passo">AL POSTO DI QUALE TURNO?</div><div class="cam-chip">'+
+       codici.map(tasto).join('')+'</div>';
+  }
+  if((lontani||[]).length){
+    h+='<div class="cam-passo" style="color:var(--text3);">ALTRI TURNI SCOPERTI, SU ORARI DIVERSI</div>'+
+       '<div class="cam-chip">'+lontani.map(tasto).join('')+'</div>';
+  }
+  h+='<button type="button" class="altri" style="margin-top:6px;" onclick="nienteSost()">Nessuno: si aggiunge</button>';
+  pan.innerHTML=h;
+  document.body.appendChild(pan);
+  if(!telManager()){
+    pan.style.position='fixed';pan.style.left='50%';pan.style.top='50%';
+    pan.style.transform='translate(-50%,-50%)';pan.style.maxWidth='340px';
+  }
+}
+function nienteSost(){chiudiSost();}
+function confermaSost(di,pid,slot,code){
+  const wk=curWeek();if(!wk)return;
+  aggiungiSost(wk,di,slot,pid,code);
+  chiudiSost();
+  renderTurni();
+}
+
+// --- Cambio turno: uno salta, un altro lo copre ---
+// Due mosse in un colpo solo: a chi non c'e' si mette malattia (o
+// permesso, o ferie), a chi entra il suo turno. Gli extra arrivano da
+// "Disponibilita extra": si vedono le fasce che hanno segnato per QUEL
+// giorno, e se coprono il turno lasciato scoperto.
+let CAMBIO=null;
+
+function apriCambioTurno(di){
+  CAMBIO={di:di,pid:null,serv:'',motivo:'MALATTIA',nuovoPid:null,nuovoCode:null};
+  disegnaCambio();
+}
+function chiudiCambio(){CAMBIO=null;const p=document.getElementById('pan-cambio');if(p)p.remove();}
+
+// I codici "fuori servizio" che usiamo come motivo. MALATTIA c'e' solo
+// se e' in legenda; altrimenti resta permesso (OFF) e ferie.
+function motiviCambio(){
+  const m=[];
+  if(turniSceglibili().some(t=>(t.code||'').toUpperCase()==='MALATTIA'))m.push(['MALATTIA','Malattia']);
+  const off=turniSceglibili().find(t=>t.is_off);
+  if(off)m.push([off.code,'Permesso']);
+  const fe=turniSceglibili().find(t=>t.is_ferie);
+  if(fe)m.push([fe.code,'Ferie']);
+  m.push(['','Svuota']);
+  return m;
+}
+// Le fasce che un extra ha segnato per quel giorno, scritte in chiaro.
+function dispTesto(disp){
+  if(!disp)return'';
+  const f=disp.fasce||[];
+  if(!f.length)return'tutto il giorno';
+  const nomi=f.map(id=>{const x=fascia(id);return x?x.label:null;}).filter(Boolean);
+  const unici=[];nomi.forEach(n=>{if(unici.indexOf(n)<0)unici.push(n);});
+  return unici.join(' \u00b7 ')||'tutto il giorno';
+}
+// Quanto la disponibilita' di un extra copre il turno lasciato
+// scoperto: 2 tutto, 1 una parte, 0 niente. Si confrontano le fasce di
+// quel giorno toccate dal turno con quelle che l'extra ha segnato.
+function copreTurno(disp,wk,di,code){
+  if(!disp)return 0;
+  const scelte=disp.fasce||[];
+  if(!scelte.length)return 2;           // nessuna fascia scelta = tutto il giorno
+  const fasce=fasceDelGiorno(wk,di).filter(function(f){return shiftInFascia(code,f.id);});
+  if(!fasce.length)return 2;            // turno senza fasce note: non si sa, non lo scarto
+  const dentro=fasce.filter(function(f){return scelte.indexOf(f.id)>=0;}).length;
+  return dentro===fasce.length?2:(dentro?1:0);
+}
+function dataDelGiorno(wk,di){
+  const d=getWeekDates(wk);
+  return d?dateToStr(d[di]):null;
+}
+
+function disegnaCambio(){
+  const c=CAMBIO;if(!c)return;
+  const wk=curWeek();if(!wk)return;
+  chiudiPannello();
+  let pan=document.getElementById('pan-cambio');
+  if(!pan){pan=document.createElement('div');pan.className='pan';pan.id='pan-cambio';document.body.appendChild(pan);}
+  const di=c.di, tipo=wk.day_config[di];
+  const dataStr=dataDelGiorno(wk,di);
+
+  let h='<h4>Cambio turno &middot; '+DAY_NAMES[di]+String(numeroGiorno(wk,di))+
+        '<span style="float:right;cursor:pointer;color:var(--text3);" onclick="chiudiCambio()">&times;</span></h4>';
+
+  // passo 1: chi non c'e'
+  h+='<div class="cam-passo">1 &middot; CHI NON C\u2019\u00c8</div>';
+  const inServizio=[];
+  personePerVista().forEach(function(p){
+    const campi=(tipo==='pranzo_cena')?[['pranzo','_P'],['cena','_C']]:[[null,'']];
+    campi.forEach(function(ca){
+      const code=getShiftCode(wk,di,p.id,ca[0]);
+      if(!code||isFuoriServizio(code))return;
+      inServizio.push({p:p,code:code,serv:ca[0]||''});
+    });
+  });
+  if(!inServizio.length){
+    h+='<p class="tel-nota">Nessuno in turno questo giorno.</p>';
+  }else if(!c.pid){
+    h+=inServizio.map(function(x){
+      return '<div class="cam-riga" onclick="cambioScegliChi(\''+x.p.id+'\',\''+x.serv+'\')">'+
+        '<span class="nm">'+x.p.name+(x.serv?'<span class="sot">'+x.serv+'</span>':'')+'</span>'+
+        '<span class="sg" style="'+shiftColorStyle(x.code)+'">'+x.code+'</span></div>';
+    }).join('');
+  }else{
+    const sc=inServizio.find(function(x){return x.p.id===c.pid&&x.serv===c.serv;})||{p:personaDi(c.pid),code:''};
+    const sh=getShift(sc.code);
+    h+='<div class="cam-riga sel"><span class="nm">'+(sc.p?sc.p.name:'')+
+       '<span class="sot">'+(sh?orariTurno(sh).join(' \u00b7 '):'')+'</span></span>'+
+       '<span class="sg" style="'+shiftColorStyle(sc.code)+'">'+sc.code+'</span>'+
+       '<span style="font-size:12px;font-weight:600;color:var(--blue-text);" onclick="event.stopPropagation();cambioScegliChi(null)">Cambia</span></div>';
+    h+='<div class="cam-chip" style="margin-top:7px;">'+motiviCambio().map(function(m){
+      return '<button type="button" class="'+(c.motivo===m[0]?'sel':'')+'" onclick="cambioMotivo(\''+m[0]+'\')">'+m[1]+'</button>';
+    }).join('')+'</div>';
+
+    // passo 2: chi lo copre
+    h+='<div class="cam-passo">2 &middot; CHI LO COPRE'+
+       '<span style="float:right;font-weight:400;letter-spacing:0;color:var(--text3);">da Disponibilit&agrave; extra</span></div>';
+    const occupati=new Set(inServizio.map(function(x){return x.p.id;}));
+    const extra=personePerVista().filter(function(q){return isExtra(q)&&!occupati.has(q.id);});
+    if(!extra.length){
+      h+='<p class="tel-nota">Nessun extra libero in questo giorno.</p>';
+    }else{
+      const daCoprire=sc.code||'';
+      const conDisp=[],senzaDisp=[];
+      extra.forEach(function(q){
+        const disp=dataStr?getDisp(q.id,dataStr):null;
+        (disp?conDisp:senzaDisp).push({q:q,disp:disp,liv:copreTurno(disp,wk,di,daCoprire)});
+      });
+      conDisp.sort(function(a,b){return b.liv-a.liv;});
+      conDisp.concat(senzaDisp).forEach(function(x){
+        const scelto=c.nuovoPid===x.q.id;
+        const tag=!x.disp?'<span class="cam-tag no">non ha segnato</span>'
+          :x.liv===2?'<span class="cam-tag ok">copre il '+daCoprire+'</span>'
+          :x.liv===1?'<span class="cam-tag forse">copre in parte</span>'
+                    :'<span class="cam-tag no">altre ore</span>';
+        h+='<div class="cam-riga'+(scelto?' sel':'')+'" onclick="cambioScegliExtra(\''+x.q.id+'\')">'+
+           '<span class="nm">'+x.q.name+'<span class="sot">'+(x.disp?dispTesto(x.disp):'nessuna disponibilit\u00e0')+'</span></span>'+
+           tag+'</div>';
+        if(scelto){
+          const suoi=turniExtra(x.q);
+          h+='<div class="cam-chip" style="margin:-1px 0 7px 10px;">'+suoi.map(function(code){
+            const sh=getShift(code);
+            return '<button type="button" class="'+(c.nuovoCode===code?'sel':'')+'" onclick="event.stopPropagation();cambioCode(\''+code+'\')">'+
+              code+'<span style="display:block;font-size:9px;color:var(--text3);">'+((sh&&orariTurno(sh)[0])||'')+'</span></button>';
+          }).join('')+'</div>';
+        }
+      });
+    }
+    // ...e se fra gli extra non c'e' nessuno, si guarda tutto lo staff
+    h+='<button type="button" class="altri" style="margin-top:2px;" onclick="cambioTutti()">'+
+       (c.tutti?'Mostra solo gli extra':'Cerca in tutto lo staff \u203A')+'</button>';
+    if(c.tutti){
+      const liberi=personePerVista().filter(function(q){
+        return !isExtra(q)&&!occupati.has(q.id)&&q.id!==c.pid;
+      });
+      if(!liberi.length)h+='<p class="tel-nota">Tutti gli altri sono gi&agrave; in turno.</p>';
+      liberi.forEach(function(q){
+        const ora=getShiftCode(wk,di,q.id,c.serv||null)||getShiftCode(wk,di,q.id,null)||'';
+        const sh=ora?getShift(ora):null;
+        const inFerie=!!(sh&&sh.is_ferie);
+        const sa=((q.canDo||[]).indexOf(sc.code)>=0);
+        const scelto=c.nuovoPid===q.id;
+        h+='<div class="cam-riga'+(scelto?' sel':'')+'" onclick="cambioScegliExtra(\''+q.id+'\')">'+
+           '<span class="nm">'+q.name+'<span class="sot">'+
+           (inFerie?'in ferie':(ora?('oggi '+ora):'oggi libero'))+'</span></span>'+
+           (sa?'<span class="cam-tag ok">ha il '+sc.code+'</span>'
+              :'<span class="cam-tag no">non ha il '+sc.code+'</span>')+'</div>';
+        if(scelto){
+          const suoi=turniExtra(q);
+          h+='<div class="cam-chip" style="margin:-1px 0 7px 10px;">'+suoi.map(function(code){
+            const s2=getShift(code);
+            return '<button type="button" class="'+(c.nuovoCode===code?'sel':'')+'" onclick="event.stopPropagation();cambioCode(\''+code+'\')">'+
+              code+'<span style="display:block;font-size:9px;color:var(--text3);">'+((s2&&orariTurno(s2)[0])||'')+'</span></button>';
+          }).join('')+'</div>';
+        }
+      });
+    }
+  }
+
+  // fondo
+  if(c.pid){
+    const chi=personaDi(c.pid), chi2=c.nuovoPid?personaDi(c.nuovoPid):null;
+    const motLabel=(motiviCambio().find(function(m){return m[0]===c.motivo;})||['','']) [1];
+    h+='<div class="cam-fondo"><span style="flex-grow:1;font-size:12px;color:var(--text2);">'+
+       (chi?chi.name:'')+' &rarr; '+(motLabel||'niente')+
+       (chi2&&c.nuovoCode?(' &middot; '+chi2.name+' &rarr; '+c.nuovoCode):'')+'</span>'+
+       '<button type="button" class="btn primary" style="font-size:13px;padding:8px 14px;" onclick="applicaCambio()">Applica</button></div>';
+  }
+  pan.innerHTML=h;
+  if(!telManager()){
+    pan.style.position='fixed';pan.style.left='50%';pan.style.top='50%';
+    pan.style.transform='translate(-50%,-50%)';pan.style.maxHeight='80vh';pan.style.overflow='auto';
+  }
+}
+// I turni che puo' fare un extra: i suoi, se glieli hai messi, se no tutti.
+function turniExtra(q){
+  const lavoro=turniSceglibili().filter(function(t){
+    return !t.is_off&&!t.is_ferie&&(t.code||'').toUpperCase()!=='MALATTIA';
+  }).map(function(t){return t.code;});
+  const suoi=((q&&q.canDo)||[]).filter(function(c){return lavoro.indexOf(c)>=0;});
+  return suoi.length?suoi:lavoro;
+}
+function cambioScegliChi(pid,serv){
+  if(!CAMBIO)return;
+  CAMBIO.pid=pid;CAMBIO.serv=serv||'';
+  CAMBIO.nuovoPid=null;CAMBIO.nuovoCode=null;
+  disegnaCambio();
+}
+function cambioMotivo(m){if(CAMBIO){CAMBIO.motivo=m;disegnaCambio();}}
+function cambioScegliExtra(pid){
+  if(!CAMBIO)return;
+  if(CAMBIO.nuovoPid===pid){CAMBIO.nuovoPid=null;CAMBIO.nuovoCode=null;}
+  else{CAMBIO.nuovoPid=pid;CAMBIO.nuovoCode=null;}
+  disegnaCambio();
+}
+function cambioCode(code){if(CAMBIO){CAMBIO.nuovoCode=code;disegnaCambio();}}
+function cambioTutti(){if(CAMBIO){CAMBIO.tutti=!CAMBIO.tutti;disegnaCambio();}}
+function applicaCambio(){
+  const c=CAMBIO;if(!c||!c.pid)return;
+  const wk=curWeek();if(!wk)return;
+  const chi=personaDi(c.pid), chi2=c.nuovoPid?personaDi(c.nuovoPid):null;
+  const motLabel=(motiviCambio().find(function(m){return m[0]===c.motivo;})||['',''])[1];
+  const codeOra=getShiftCode(wk,c.di,c.pid,c.serv||null);
+  let testo=chi.name+': '+(c.motivo?motLabel.toLowerCase():'turno tolto');
+  if(chi2&&c.nuovoCode)testo+='\n'+chi2.name+': '+c.nuovoCode+
+    ((isExtra(chi2)&&codeOra)?(' , al posto del '+codeOra):'');
+  else testo+='\n\nNessun sostituto: il turno resta scoperto.';
+  if(!confirm(DAY_NAMES[c.di]+String(numeroGiorno(wk,c.di))+'\n\n'+testo+'\n\nConfermi?'))return;
+  // setShift mette gia' il suo punto di annullamento per ogni mossa
+  const codeUscente=getShiftCode(wk,c.di,c.pid,c.serv||null);
+  applicaTurno(c.di,c.pid,c.serv,c.motivo,false);
+  if(chi2&&c.nuovoCode){
+    applicaTurno(c.di,c.nuovoPid,c.serv,c.nuovoCode,false);
+    chiudiSost();// qui il legame lo sappiamo gia': non c'e' niente da chiedere
+    if(codeUscente&&c.nuovoCode!==codeUscente)aggiungiSost(wk,c.di,codeUscente,c.nuovoPid,c.nuovoCode);
+  }
+  chiudiCambio();
+  renderTurni();
+}
+
 // ===== SECONDO GIRO: filtri, copertura, bozza, copia settimana =====
 let FILTRO_STAFF='tutti';   // tutti | senza | extra
 function setFiltroStaff(v){FILTRO_STAFF=v;renderTurni();}
@@ -2815,7 +3479,7 @@ function aggiornaBarreManager(wk){
   }
   // --- bozza ---
   if(wk&&!chiusa&&!isPublished(wk)){
-    h+='<div class="fascetta gialla"><b>Bozza</b><span>Lo staff non vede questa settimana finch&eacute; non premi Pubblica. '+
+    h+='<div class="fascetta gialla"><b>Bozza</b><span>Lo staff non vede questa settimana finch&eacute; non la pubblichi (Azioni &rsaquo; Pubblica). '+
        'Finch&eacute; &egrave; bozza la griglia resta rigata.</span></div>';
   }
   copia.innerHTML=h;
@@ -2838,6 +3502,8 @@ function renderTurni(){
   wrap.className='wrap wrap-fisso'+((isManager()&&!settimanaChiusa(wk)&&!isPublished(wk))?' bozza':'');
   const esito=conIstantanea(wk,()=>{renderVistaTelefono(wk);return renderTurniCorpo(wk,wrap);});
   aggiornaBarreManager(wk);
+  avvisoCambi(wk);
+  aggiornaModoTelefono();
   return esito;
 }
 // La fascetta in cima alla settimana: chiusa, da chiudere, o niente.
@@ -2949,13 +3615,14 @@ function renderTurniCorpo(wk,wrap){
         const cellBg=isAvail?'background:#dcfce7;':(!val&&hasOffReq?'background:#fff8dd;':'');
         const cellBorder=bloc?'outline:2px solid #7e22ce;outline-offset:-2px;'
           :richPending?'outline:2px solid #f5d76e;outline-offset:-2px;':'';
-        const cellTitle=bloc?bloc.testo+' — bloccata':isAvail?'Disponibile':richPending?'Richiesta: '+richPending.turno_richiesto:hasOffReq?'Richiesta giorno libero':'';
+        const cam=cambioDi(wk,c.idx,p.id,c.servizio||'');
+        const cellTitle=cam?cambioTesto(cam):(bloc?bloc.testo+' — bloccata':isAvail?'Disponibile':richPending?'Richiesta: '+richPending.turno_richiesto:hasOffReq?'Richiesta giorno libero':'');
         const sg=`<span class="sig" style="color:${val?shiftTextColor(val):'var(--text)'};font-weight:${val?'600':'400'};">${val||''}</span>`;
         if(soloLettura){
-          h+=`<td class="shift-cell" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}">${sg}${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
+          h+=`<td class="shift-cell${cam?' cambiata':''}" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}">${sg}${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
         } else {
           const scelta=SEL&&SEL.tipo==='turno'&&SEL.di===c.idx&&SEL.pid===p.id&&SEL.serv===(c.servizio||'');
-          h+=`<td class="shift-cell cella-mod${scelta?' sel':''}" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}" data-cella="${c.idx}|${p.id}|${c.servizio||''}">${sg}${scelta?'<span class="maniglia"></span>':''}${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
+          h+=`<td class="shift-cell cella-mod${scelta?' sel':''}${cam?' cambiata':''}" style="${cs}${cellBg}${cellBorder}" title="${cellTitle}" data-cella="${c.idx}|${p.id}|${c.servizio||''}">${sg}${scelta?'<span class="maniglia"></span>':''}${bloc?'<span style="font-size:9px;color:#7e22ce;vertical-align:top;" title="'+bloc.testo+'">&#128274;</span>':''}</td>`;
         }
       } else {
         h+=`<td class="shift-cell-ro" style="${cs}">${val}</td>`;
@@ -3080,11 +3747,20 @@ function setShift(di,pid,servizio,val){
   const wk=curWeek();pushUndo(wk);
   if(!wk.shift_assign[di])wk.shift_assign[di]={};
   const key=servizio==='pranzo'?pid+'_P':servizio==='cena'?pid+'_C':pid;
+  const prima=wk.shift_assign[di][key];
   wk.shift_assign[di][key]=val;
+  registraCambio(wk,di,pid,servizio,prima,val);
+  // Le postazioni di quella persona in quel giorno: restano dove il turno
+  // nuovo passa ancora, si perdono solo dove non c'e' piu'. Prima si
+  // cancellavano tutte, e cambiare C8 in C12 costringeva a rifarle.
   if(wk.role_assign){
+    const codici=codiciGiorno(wk,di,pid).map(c=>c[1]).filter(c=>c&&!isFuoriServizio(c));
     Object.keys(wk.role_assign).forEach(k=>{
       const parts=k.split('_');
-      if(parts.length===3&&parts[0]==String(di)&&parts[2]===pid) delete wk.role_assign[k];
+      if(parts.length!==3||parts[0]!=String(di)||parts[2]!==pid)return;
+      const fid=+parts[1];
+      if(codici.some(c=>shiftInFascia(c,fid)))return;
+      delete wk.role_assign[k];
     });
   }
   markDirty();
@@ -3222,7 +3898,8 @@ function cellaDi(info){
 }
 function personaDi(pid){return (G.allStaff||[]).find(p=>p.id===pid)||null;}
 function ridisegnaVista(){
-  if(SEL&&SEL.tipo==='ruolo')renderDayContent();else renderTurni();
+  if(SEL&&SEL.tipo==='ruolo'){renderDayContent();if(telManager()&&VISTA_TEL==='giorno')renderMgrTelefono(curWeek());}
+  else renderTurni();
 }
 function chiudiPannello(){const p=document.getElementById('pan-casella');if(p)p.remove();}
 function deseleziona(){const c=SEL;SEL=null;chiudiPannello();if(c){if(c.tipo==='ruolo')renderDayContent();else renderTurni();}}
@@ -3247,6 +3924,7 @@ function applicaTurno(di,pid,serv,code,chiedi){
     if(!confirm(code+' non e\' tra i turni di '+(p?p.name:'questa persona')+'.\n\nMetterlo lo stesso?'))return false;
   }
   setShift(di,pid,serv||null,code);
+  if(typeof forseSostituisce==='function')forseSostituisce(di,pid,code);
   return true;
 }
 function applicaRuolo(key,val){setRole(key,val);}
@@ -3487,7 +4165,7 @@ function coperturaGiorno(wk,di){
   (G.allStaff||[]).filter(s=>repOf(s)===REP).forEach(s=>{
     // una persona vale un turno: lo stesso codice su pranzo e cena non conta due volte
     const suoi=[giorno[s.id],giorno[s.id+'_P'],giorno[s.id+'_C']].filter(v=>v&&!isFuoriServizio(v));
-    [...new Set(suoi)].forEach(v=>presenti.push({code:v,nome:s.name}));
+    [...new Set(suoi)].forEach(v=>presenti.push({code:v,nome:s.name,pid:s.id}));
   });
   const rimasti=presenti.slice();
   const mancanti=[];
@@ -3496,7 +4174,19 @@ function coperturaGiorno(wk,di){
     const i=rimasti.findIndex(x=>codici.includes(x.code));
     if(i>=0)rimasti.splice(i,1); else mancanti.push(codici);
   });
-  return{n:presenti.length,serve:slots.length,mancanti:mancanti,extra:rimasti};
+  // Un extra messo "al posto di" un turno che manca: quel posto e'
+  // coperto, e l'extra non e' una persona in piu'.
+  const sostituiti=[];
+  sostDelGiorno(wk,di).forEach(function(so){
+    const im=mancanti.findIndex(function(cod){return (cod||[]).indexOf(so.slot)>=0;});
+    if(im<0)return;
+    const ir=rimasti.findIndex(function(x){return x.code===so.code&&x.pid===so.pid;});
+    if(ir<0)return;
+    mancanti.splice(im,1);
+    const chi=rimasti.splice(ir,1)[0];
+    sostituiti.push({slot:so.slot,code:so.code,nome:chi.nome});
+  });
+  return{n:presenti.length,serve:slots.length,mancanti:mancanti,extra:rimasti,sostituiti:sostituiti};
 }
 function chiudiCopertura(){const p=document.getElementById('pan-copertura');if(p)p.remove();}
 function apriCopertura(di,td){
@@ -3526,6 +4216,17 @@ function apriCopertura(di,td){
       });
       h+='</div>';
     }
+    if((r.sostituiti||[]).length){
+      h+='<div class="eti">Sostituiti</div><div style="display:flex;flex-direction:column;gap:4px;">';
+      r.sostituiti.forEach(function(x){
+        h+='<div style="display:flex;align-items:center;gap:8px;font-size:13px;">'+
+           '<span style="font-weight:700;color:var(--blue-text);">'+x.slot+'</span>'+
+           '<span style="color:var(--text3);">&rarr;</span>'+
+           '<span style="font-weight:600;">'+x.nome+'</span>'+
+           '<span style="font-size:11px;font-weight:700;color:var(--text2);">'+x.code+'</span></div>';
+      });
+      h+='</div>';
+    }
     if(r.extra.length){
       h+='<div class="eti">In pi&ugrave; rispetto al fabbisogno</div>'+
          '<p style="font-size:12px;color:var(--text2);line-height:1.5;margin:0;">'+
@@ -3543,7 +4244,7 @@ function apriCopertura(di,td){
   p.style.left=Math.max(8,x)+'px';p.style.top=y+'px';
 }
 document.addEventListener('click',function(ev){
-  if(!ev.target.closest('#pan-copertura')&&!ev.target.closest('.count-row'))chiudiCopertura();
+  if(!ev.target.closest('#pan-copertura')&&!ev.target.closest('.count-row')&&!ev.target.closest('.tel-cop'))chiudiCopertura();
 });
 
 function coperturaGiornoCella(wk,di,span){
