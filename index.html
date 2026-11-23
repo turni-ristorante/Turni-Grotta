@@ -5531,24 +5531,74 @@ async function loadArchive(){
       el.innerHTML='<p style="font-size:12px;color:var(--text3);">Nessuna versione salvata per questa settimana.</p>';
       return;
     }
-    el.innerHTML=versions.map(v=>{
+    el.innerHTML=versions.map((v,iv)=>{
       const dt=new Date(v.saved_at).toLocaleString('it-IT');
       const dayCount=v.shift_assign?Object.keys(v.shift_assign).length:0;
       const roleCount=v.role_assign?Object.keys(v.role_assign).filter(k=>v.role_assign[k]).length:0;
+      // le versioni arrivano dalla piu' recente: la precedente e' quella dopo
+      const nd=quanteDiverse(v,versions[iv+1]);
+      const segno=nd===null?'<span style="font-size:10px;font-weight:600;color:var(--text3);background:var(--bg3);border:0.5px solid var(--border);padding:2px 8px;border-radius:20px;">primo salvataggio</span>'
+        :nd===0?'<span style="font-size:10px;font-weight:600;color:var(--text2);background:var(--bg3);border:0.5px solid var(--border);padding:2px 8px;border-radius:20px;">niente cambiato</span>'
+        :'<span style="font-size:10px;font-weight:600;color:var(--blue-text);background:var(--blue-bg);border:0.5px solid var(--blue-border);padding:2px 8px;border-radius:20px;">'+nd+(nd===1?' casella cambiata':' caselle cambiate')+'</span>';
       return`<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fff;border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:6px;flex-wrap:wrap;">
         <div style="flex:1;">
           <div style="font-size:13px;font-weight:500;">${dt}</div>
           <div style="font-size:11px;color:var(--text2);">Salvato da: <b>${v.saved_by||'sconosciuto'}</b> • ${dayCount} giorni • ${roleCount} ruoli${v.note?' • '+v.note:''}</div>
         </div>
+        ${segno}
         <button class="btn warn" style="font-size:11px;padding:4px 10px;" onclick="previewVersion('${v.id}')">👁 Anteprima</button>
         <button class="btn danger" style="font-size:11px;padding:4px 10px;" onclick="restoreVersion('${v.id}','${dt}')">↩ Ripristina</button>
       </div>`;
     }).join('');
   }catch(e){el.innerHTML='<p style="color:var(--red-text);">Errore caricamento versioni.</p>';}
 }
+// Che cosa cambia fra una versione salvata e la settimana com'e' adesso.
+// Le chiavi sono quelle vere del dato: "<giorno>|<persona>" oppure
+// "<giorno>|<persona>_P" e "_C" nei giorni con pranzo e cena.
+function diffTurni(prima,dopo){
+  const diff={};
+  const giorni=new Set(Object.keys(prima||{}).concat(Object.keys(dopo||{})));
+  giorni.forEach(function(di){
+    const A=(prima||{})[di]||{}, B=(dopo||{})[di]||{};
+    const chiavi=new Set(Object.keys(A).concat(Object.keys(B)));
+    chiavi.forEach(function(k){
+      const a=A[k]||'', b=B[k]||'';
+      if(a!==b)diff[di+'|'+k]={prima:a,dopo:b};
+    });
+  });
+  return diff;
+}
+function diffRuoli(prima,dopo){
+  const diff={};
+  const chiavi=new Set(Object.keys(prima||{}).concat(Object.keys(dopo||{})));
+  chiavi.forEach(function(k){
+    const a=(prima||{})[k]||'', b=(dopo||{})[k]||'';
+    if(a!==b)diff[k]={prima:a,dopo:b};
+  });
+  return diff;
+}
+// Quante caselle ha cambiato QUEL salvataggio rispetto a quello prima.
+function quanteDiverse(v,prec){
+  if(!prec)return null;// il piu' vecchio: non c'e' un prima
+  return Object.keys(diffTurni(prec.shift_assign||{},v.shift_assign||{})).length
+       + Object.keys(diffRuoli(prec.role_assign||{},v.role_assign||{})).length;
+}
+function testoDiff(d){
+  return 'Prima '+(d.prima||'vuota')+' \u2014 qui '+(d.dopo||'vuota');
+}
 async function previewVersion(versionId){
   const {data:v}=await sb.from('week_versions').select('*').eq('id',versionId).single();
   if(!v)return;
+  // Il salvataggio fatto subito prima di questo, sulla stessa settimana:
+  // e' quello con cui ha senso confrontarlo.
+  let prec=null;
+  try{
+    const {data:tutte}=await sb.from('week_versions').select('*')
+      .eq('week_id',v.week_id).order('saved_at',{ascending:false}).limit(50);
+    const lista=(tutte||[]).slice().sort(function(a,b){return (a.saved_at<b.saved_at)?1:-1;});
+    const i=lista.findIndex(function(x){return x.id===v.id;});
+    prec=(i>=0&&lista[i+1])?lista[i+1]:null;
+  }catch(e){prec=null;}
   const dt=new Date(v.saved_at).toLocaleString('it-IT');
   const wk=G.weeks.find(w=>w.id===v.week_id);
   const wkName=wk?wk.name:('Settimana archiviata');
@@ -5564,6 +5614,10 @@ async function previewVersion(versionId){
   const header=panel.querySelector('.compare-header h3');
   if(header)header.textContent=`Anteprima: ${dt} (${v.saved_by||'sconosciuto'})`;
   if(sel)sel.style.display='none';
+  const dTurni=prec?diffTurni(prec.shift_assign||{},v.shift_assign||{}):{};
+  const dRuoli=prec?diffRuoli(prec.role_assign||{},v.role_assign||{}):{};
+  const nDiff=Object.keys(dTurni).length+Object.keys(dRuoli).length;
+  const dtPrec=prec?new Date(prec.saved_at).toLocaleString('it-IT'):'';
   const days=DAY_NAMES.map((n,i)=>({name:n,idx:i,tipo:fakeWk.day_config[i]})).filter(d=>d.tipo!=='chiuso');
   const weekDates=getWeekDates(fakeWk);
   let cols=[];
@@ -5574,6 +5628,14 @@ async function previewVersion(versionId){
     else cols.push({...d,label,servizio:null,colLabel:null});
   });
   let h=`<p style="font-size:11px;color:var(--text2);margin-bottom:8px;">${wkName}</p>`;
+  if(!prec){
+    h+=`<p style="font-size:11px;color:var(--text3);background:var(--bg3);border-radius:var(--radius);padding:7px 10px;margin-bottom:8px;">Primo salvataggio di questa settimana: non c'&egrave; una versione prima con cui confrontarlo.</p>`;
+  }else if(!nDiff){
+    h+=`<p style="font-size:11px;color:var(--green-text);background:var(--green-bg);border:0.5px solid var(--green-border);border-radius:var(--radius);padding:7px 10px;margin-bottom:8px;">Nessuna casella cambiata rispetto al salvataggio del ${dtPrec}.</p>`;
+  }else{
+    h+=`<p style="font-size:11px;color:var(--blue-text);background:var(--blue-bg);border:0.5px solid var(--blue-border);border-radius:var(--radius);padding:7px 10px;margin-bottom:8px;">
+      <b>${nDiff}</b> ${nDiff===1?'casella cambiata':'caselle cambiate'} rispetto al salvataggio del <b>${dtPrec}</b>${prec.saved_by?' ('+prec.saved_by+')':''}: hanno il bordo blu, e sotto c'&egrave; cosa c'era prima.</p>`;
+  }
   h+='<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:11px;width:100%;">';
   h+='<thead><tr><th style="text-align:left;padding:3px 6px;background:var(--bg3);border:0.5px solid var(--border);min-width:80px;position:sticky;left:0;">Staff</th>';
   let lastDi=-1;
@@ -5589,7 +5651,10 @@ async function previewVersion(versionId){
     cols.forEach(c=>{
       const val=getShiftCode(fakeWk,c.idx,p.id,c.servizio);
       const cs=val?shiftColorStyle(val):'';
-      h+=`<td style="padding:3px 5px;border:0.5px solid var(--border);text-align:center;font-size:10px;font-weight:${val?'600':'400'};${cs}">${val||''}</td>`;
+      const sk=c.servizio==='pranzo'?p.id+'_P':c.servizio==='cena'?p.id+'_C':p.id;
+      const dd=dTurni[c.idx+'|'+sk];
+      const bordo=dd?'outline:2px solid var(--blue-text);outline-offset:-2px;':'';
+      h+=`<td title="${dd?testoDiff(dd):''}" style="padding:3px 5px;border:0.5px solid var(--border);text-align:center;font-size:10px;font-weight:${val?'600':'400'};${cs}${bordo}">${val||''}${dd?'<span style="display:block;font-size:8px;font-weight:600;color:var(--text2);background:#fff;border-radius:3px;margin-top:1px;">prima '+(dd.prima||'vuota')+'</span>':''}</td>`;
     });
     h+='</tr>';
   });
@@ -5597,7 +5662,8 @@ async function previewVersion(versionId){
   // GIORNALIERO per ogni giorno
   h+='<p style="font-size:11px;font-weight:500;color:var(--text2);margin:12px 0 6px;text-transform:uppercase;letter-spacing:.05em;">Giornaliero per fascia</p>';
   days.forEach(d=>{
-    const fasce=fasceDelGiorno(wk,d.idx);
+    const tipo=d.tipo;
+    const fasce=fasceDelGiorno(fakeWk,d.idx);
     const dateStr=weekDates?` ${weekDates[d.idx].getDate()}`:' ';
     h+=`<p style="font-size:10px;font-weight:600;color:var(--text2);margin:8px 0 3px;">${d.name}${dateStr}</p>`;
     h+='<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:10px;width:100%;margin-bottom:8px;">';
@@ -5617,7 +5683,8 @@ async function previewVersion(versionId){
         else{
           const key=`${d.idx}_${f.id}_${p.id}`;
           const role=fakeWk.role_assign[key]||'';
-          h+=`<td style="border:0.5px solid var(--border);text-align:center;font-size:9px;${role?'':'color:var(--text3);'}">${role||'·'}</td>`;
+          const dr=dRuoli[key];
+          h+=`<td title="${dr?testoDiff(dr):''}" style="border:0.5px solid var(--border);text-align:center;font-size:9px;${role?'':'color:var(--text3);'}${dr?'outline:2px solid var(--blue-text);outline-offset:-2px;':''}">${role||'·'}</td>`;
         }
       });
       const cp=tipo==='pranzo_cena'?getShiftCode(fakeWk,d.idx,p.id,'pranzo'):'';
