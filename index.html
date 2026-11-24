@@ -18,6 +18,9 @@ body{font-family:'DM Sans',sans-serif;font-size:13px;color:#1a1a1a;background:#f
    "manipulation" toglie lo zoom del doppio tocco e lascia tutto il
    resto, pizzicare per ingrandire compreso. */
 html{touch-action:manipulation;}
+/* Niente rimbalzo del documento: su iPhone e' quello che fa "scivolare"
+   le barre fisse mentre scorri. */
+html,body{overscroll-behavior-y:none;}
 button,select,input,label,a,.cella-mod,.tel-r-m,.tel-riga,.day-btn,.nav-btn,.nav-item,.btn{touch-action:manipulation;}
 :root{
   --bg:#f5f5f0;--bg2:#fff;--bg3:#f0efea;--bg4:#e8e7e2;
@@ -408,6 +411,17 @@ td.cambiata::after{content:'';position:absolute;top:2px;right:2px;width:7px;heig
   .nav-dropdown{min-width:170px;}
   .nav-group-btn{padding:6px 10px;}
 
+  /* Il menu Azioni si apriva verso sinistra a partire dal tasto: su uno
+     schermo stretto finiva fuori dallo schermo. Qui sale dal basso, come
+     gli altri pannelli. */
+  .azioni-menu.open{position:fixed;left:10px;right:10px;top:auto;
+    bottom:calc(10px + env(safe-area-inset-bottom,0px));
+    min-width:0;max-height:70vh;overflow:auto;z-index:520;
+    border-radius:16px;padding:8px;
+    box-shadow:0 -10px 34px rgba(40,38,30,.28);}
+  body.tel-barra .azioni-menu.open{bottom:calc(80px + env(safe-area-inset-bottom,0px));}
+  .azioni-menu button{min-height:46px;font-size:14px;}
+
   /* pannello di confronto a tutta larghezza */
   .compare-panel{width:100%;right:-100%;}
   .compare-panel.open{right:0;}
@@ -419,7 +433,15 @@ td.cambiata::after{content:'';position:absolute;top:2px;right:2px;width:7px;heig
 }
 @media (max-width:860px){
   .solo-telefono{display:block;}
-  body.tel-barra{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px));}
+  /* Con la barra in basso la pagina diventa un contenitore che scorre
+     per conto suo: cosi' la barra resta incollata al bordo e non si
+     trascina dietro il contenuto quando iOS fa rimbalzare la pagina. */
+  html.tel-shell{overflow:hidden;height:100%;}
+  body.tel-barra{position:fixed;left:0;right:0;top:0;bottom:0;
+    overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    padding-bottom:calc(72px + env(safe-area-inset-bottom,0px));}
+  #barra-tel{transform:translateZ(0);}
   body.tel-barra #barra-tel{display:flex;}
   body.tel-mgr #mgr-telefono{display:block;}
   body.tel-mgr .main-with-sidebar{display:none;}
@@ -2866,28 +2888,44 @@ function telManager(){return isManager()&&window.innerWidth<=860;}
 function aggiornaModoTelefono(){
   const tel=telManager();
   document.body.classList.toggle('tel-barra',tel);
+  document.documentElement.classList.toggle('tel-shell',tel);
   const inGiorno=tel&&VISTA_TEL==='giorno'&&currentTab==='turni';
   document.body.classList.toggle('tel-mgr',inGiorno);
   renderBarraTel();
   if(inGiorno)renderMgrTelefono(curWeek());
 }
 
+// Girando il telefono o passando dall'iPad al computer la vista cambia:
+// senza questo, la pagina resterebbe bloccata nel modo di prima.
+let telRidisegna=null;
+window.addEventListener('resize',function(){
+  clearTimeout(telRidisegna);
+  telRidisegna=setTimeout(function(){
+    if(typeof aggiornaModoTelefono==='function')aggiornaModoTelefono();
+  },150);
+});
 function vaiVistaTel(v){
   VISTA_TEL=v;
   chiudiPannello();
   if(v==='giorno'||v==='settimana'){if(currentTab!=='turni')goTab('turni');}
   else if(v==='dafare'){if(currentTab!=='richieste')goTab('richieste');}
   aggiornaModoTelefono();
-  if(v==='giorno')window.scrollTo(0,0);
+  if(v==='giorno')portaSu();
 }
 
+// Con la barra in basso chi scorre e' il body, non la finestra.
+function portaSu(){
+  try{window.scrollTo(0,0);}catch(e){}
+  if(document.body)document.body.scrollTop=0;
+  if(document.documentElement)document.documentElement.scrollTop=0;
+}
 function renderBarraTel(){
   let b=document.getElementById('barra-tel');
   if(!telManager()){if(b)b.innerHTML='';return;}
   if(!b){b=document.createElement('div');b.id='barra-tel';document.body.appendChild(b);}
   const n=contaRichiestePendenti();
   const voci=[['giorno','\u{1F4C5}','Giorno'],['settimana','\u{1F5D3}','Settimana'],
-              ['dafare','\u2714','Da fare'],['altro','\u2699','Altro']];
+              ['dafare','\u2714','Richieste'],['altro','\u2699','Altro']];
   b.innerHTML=voci.map(function(v){
     const sel=VISTA_TEL===v[0]?' sel':'';
     const dot=(v[0]==='dafare'&&n)?'<span class="nav-dot">'+n+'</span>':'';
