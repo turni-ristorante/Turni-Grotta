@@ -14,6 +14,11 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;font-size:13px;color:#1a1a1a;background:#f5f5f0;}
+/* Due tocchi vicini su una casella non devono ingrandire la pagina:
+   "manipulation" toglie lo zoom del doppio tocco e lascia tutto il
+   resto, pizzicare per ingrandire compreso. */
+html{touch-action:manipulation;}
+button,select,input,label,a,.cella-mod,.tel-r-m,.tel-riga,.day-btn,.nav-btn,.nav-item,.btn{touch-action:manipulation;}
 :root{
   --bg:#f5f5f0;--bg2:#fff;--bg3:#f0efea;--bg4:#e8e7e2;
   --text:#1a1a1a;--text2:#555;--text3:#999;
@@ -25,7 +30,18 @@ body{font-family:'DM Sans',sans-serif;font-size:13px;color:#1a1a1a;background:#f
   --orange-bg:#fff3e0;--orange-text:#e65100;--orange-border:#ffb74d;
   --radius:8px;--radius-lg:12px;
 }
-.app{max-width:1200px;margin:0 auto;padding:1rem;}
+/* Installata su iPhone l'app e' a tutto schermo: la pagina parte dal
+   bordo in alto, cioe' sotto la fotocamera. Queste misure le chiede al
+   telefono (env): 0 dove non servono, 59px sotto l'isola dinamica. */
+.app{max-width:1200px;margin:0 auto;padding:1rem;
+  padding-top:calc(1rem + env(safe-area-inset-top,0px));
+  padding-left:max(1rem,env(safe-area-inset-left,0px));
+  padding-right:max(1rem,env(safe-area-inset-right,0px));
+  padding-bottom:calc(1rem + env(safe-area-inset-bottom,0px));}
+/* la striscia dietro l'orologio, dello stesso colore della pagina:
+   cosi' scorrendo il contenuto non si vede passare sotto l'isola */
+body::before{content:'';position:fixed;left:0;right:0;top:0;
+  height:env(safe-area-inset-top,0px);background:var(--bg);z-index:400;pointer-events:none;}
 #loading-screen{position:fixed;inset:0;background:#f5f5f0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:1000;}
 .spinner{width:32px;height:32px;border:3px solid #e0e0e0;border-top-color:#1a56db;border-radius:50%;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
@@ -165,9 +181,10 @@ td.shift-cell-ro{padding:4px 8px;font-size:11px;font-weight:500;}
 /* Compare panel */
 .compare-panel{position:fixed;top:0;right:-600px;width:580px;height:100vh;background:#fff;border-left:2px solid var(--blue-border);box-shadow:-4px 0 20px rgba(0,0,0,0.15);z-index:500;transition:right 0.3s ease;display:flex;flex-direction:column;}
 .compare-panel.open{right:0;}
-.compare-header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--blue-bg);border-bottom:0.5px solid var(--blue-border);flex-shrink:0;}
+.compare-header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--blue-bg);border-bottom:0.5px solid var(--blue-border);flex-shrink:0;
+  padding-top:calc(12px + env(safe-area-inset-top,0px));}
 .compare-header h3{font-size:13px;font-weight:500;color:var(--blue-text);flex:1;}
-.compare-body{flex:1;overflow:auto;padding:12px;}
+.compare-body{flex:1;overflow:auto;padding:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));}
 .compare-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.2);z-index:499;display:none;}
 .compare-overlay.open{display:block;}
 
@@ -361,7 +378,11 @@ td.cambiata::after{content:'';position:absolute;top:2px;right:2px;width:7px;heig
   flex-shrink:0;border-radius:50%;cursor:pointer;font-family:inherit;font-size:13px;}
 
 @media (max-width:860px){
-  .app{padding:.6rem;}
+  .app{padding:.6rem;
+    padding-top:calc(.6rem + env(safe-area-inset-top,0px));
+    padding-left:max(.6rem,env(safe-area-inset-left,0px));
+    padding-right:max(.6rem,env(safe-area-inset-right,0px));
+    padding-bottom:calc(.6rem + env(safe-area-inset-bottom,0px));}
   /* la legenda va sotto la griglia, non di fianco */
   .main-with-sidebar{flex-direction:column;}
   .main-content{width:100%;overflow:visible;}
@@ -398,14 +419,15 @@ td.cambiata::after{content:'';position:absolute;top:2px;right:2px;width:7px;heig
 }
 @media (max-width:860px){
   .solo-telefono{display:block;}
-  body.tel-barra{padding-bottom:72px;}
+  body.tel-barra{padding-bottom:calc(72px + env(safe-area-inset-bottom,0px));}
   body.tel-barra #barra-tel{display:flex;}
   body.tel-mgr #mgr-telefono{display:block;}
   body.tel-mgr .main-with-sidebar{display:none;}
   body.tel-mgr #riga-filtri{display:none;}
   body.tel-mgr #main-nav{display:none;}
   /* Il pannello della casella, sul telefono, sale dal basso */
-  body.tel-barra .pan{position:fixed!important;left:0!important;right:0!important;bottom:72px!important;
+  body.tel-barra .pan{position:fixed!important;left:0!important;right:0!important;
+    bottom:calc(72px + env(safe-area-inset-bottom,0px))!important;
     top:auto!important;width:auto!important;max-width:none!important;border-radius:16px 16px 0 0;
     max-height:70vh;overflow:auto;box-shadow:0 -10px 30px rgba(32,30,24,.22);}
   /* Dal telefono Pubblica non sta nella barra: si prende per sbaglio.
@@ -696,8 +718,9 @@ function configKey(base,r){const rr=r||REP;return rr===REP_DEFAULT?base:base+'__
 // 3) bianco sui fondi scuri predefiniti della sala.
 function shiftTextColor(code){
   const u=(code||'').toUpperCase();
-  if(u==='OFF'||u==='FERIE'||u==='MALATTIA')return'#fff';
+  if(u==='OFF'||u==='FERIE')return'#fff';
   const sh=getShift(code);
+  if(isStato(sh)&&!sh.textColor)return'#fff';
   if(sh&&sh.textColor)return sh.textColor;
   const def=repDef();
   if(def.textColor)return def.textColor;
@@ -709,7 +732,9 @@ function shiftTextColor(code){
 function shiftColorStyle(code){
   if(!code)return'';
   const u=code.toUpperCase();
-  if(u==='OFF'||u==='FERIE'||u==='MALATTIA')return'background:#111;color:#fff;';
+  const st=getShift(code);
+  if(isStato(st)&&st.color)return'background:'+st.color+';color:#fff;';
+  if(u==='OFF'||u==='FERIE'||isStato(st))return'background:#111;color:#fff;';
   const txt=shiftTextColor(code);
   // 1) colore scritto sul turno, 2) colore per forma del reparto,
   // 3) colore dedotto dalla lettera iniziale
@@ -1458,7 +1483,20 @@ function archiviaTurno(i,on){
   s.archiviato=!!on;
   renderLegenda();renderLegSidebar();markDirty();
 }
-function isFuoriServizio(code){if(!code)return true;const u=code.toUpperCase();if(u==='MALATTIA')return true;const s=getShift(code);return !s||s.is_off||s.is_ferie;}
+// OFF, FERIE, MALATTIA, PERMESSO: non sono turni, sono stati. Si
+// riconoscono dal fatto che non hanno orari, non dal nome: cosi'
+// funzionano anche se in legenda li chiami in un altro modo.
+function isStato(s){
+  if(!s)return false;
+  if(s.is_off||s.is_ferie)return true;
+  if((s.code||'').toUpperCase()==='NEW')return false;// appena creato in legenda
+  return !(s.s1&&s.e1)&&!(s.s2&&s.e2);
+}
+function isStatoCode(code){const s=getShift(code);return isStato(s);}
+// Uno stato che vale "assente per malattia o permesso": non e' riposo
+// e non sono ferie.
+function isAssenza(s){return isStato(s)&&!s.is_off&&!s.is_ferie;}
+function isFuoriServizio(code){if(!code)return true;const s=getShift(code);return !s||isStato(s);}
 // Un turno copre una fascia se i suoi orari ci si sovrappongono.
 // Non si spunta piu' a mano: lo stesso codice turno viene usato in
 // giorni con fasce diverse (C7 va sia lun-gio sia venerdi), quindi una
@@ -2076,7 +2114,7 @@ function colorLegendHtml(){
       `<span class="color-legend-item"><span class="color-dot" style="background:${byShape[k]};"></span>${lbl[k]||k}</span>`).join('')
       +'<span class="color-legend-item"><span class="color-dot" style="background:#111;"></span>OFF/FERIE</span>';
   }
-  const work=turniSceglibili().filter(s=>{const u=(s.code||'').toUpperCase();return u!=='OFF'&&u!=='FERIE'&&u!=='MALATTIA'&&!s.is_off&&!s.is_ferie;});
+  const work=turniSceglibili().filter(s=>!isStato(s));
   const seen=[];
   work.forEach(s=>{
     const style=shiftColorStyle(s.code);
@@ -2113,7 +2151,7 @@ async function switchReparto(r){
 
 function renderLegSidebar(filter){
   const workShifts=turniSceglibili().filter(s=>!isFuoriServizio(s.code)||false).filter(s=>{
-    const u=s.code.toUpperCase();return u!=='OFF'&&u!=='FERIE'&&u!=='MALATTIA'&&!s.is_off&&!s.is_ferie;
+    return !isStato(s);
   });
   const initials=[...new Set(workShifts.map(s=>s.code[0].toUpperCase()))].sort();
   const filterHtml='<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px;">'
@@ -3199,7 +3237,8 @@ function confermaSost(di,pid,slot,code){
 let CAMBIO=null;
 
 function apriCambioTurno(di){
-  CAMBIO={di:di,pid:null,serv:'',motivo:'MALATTIA',nuovoPid:null,nuovoCode:null};
+  const primi=motiviCambio();
+  CAMBIO={di:di,pid:null,serv:'',motivo:primi.length?primi[0][0]:'',nuovoPid:null,nuovoCode:null};
   disegnaCambio();
 }
 function chiudiCambio(){CAMBIO=null;const p=document.getElementById('pan-cambio');if(p)p.remove();}
@@ -3208,9 +3247,13 @@ function chiudiCambio(){CAMBIO=null;const p=document.getElementById('pan-cambio'
 // se e' in legenda; altrimenti resta permesso (OFF) e ferie.
 function motiviCambio(){
   const m=[];
-  if(turniSceglibili().some(t=>(t.code||'').toUpperCase()==='MALATTIA'))m.push(['MALATTIA','Malattia']);
+  // prima le assenze vere (malattia, permesso...), poi riposo e ferie
+  turniSceglibili().filter(isAssenza).forEach(function(t){
+    const c=t.code||'';
+    m.push([c,c.charAt(0)+c.slice(1).toLowerCase()]);
+  });
   const off=turniSceglibili().find(t=>t.is_off);
-  if(off)m.push([off.code,'Permesso']);
+  if(off)m.push([off.code,'Riposo']);
   const fe=turniSceglibili().find(t=>t.is_ferie);
   if(fe)m.push([fe.code,'Ferie']);
   m.push(['','Svuota']);
@@ -3367,7 +3410,7 @@ function disegnaCambio(){
 // I turni che puo' fare un extra: i suoi, se glieli hai messi, se no tutti.
 function turniExtra(q){
   const lavoro=turniSceglibili().filter(function(t){
-    return !t.is_off&&!t.is_ferie&&(t.code||'').toUpperCase()!=='MALATTIA';
+    return !isStato(t);
   }).map(function(t){return t.code;});
   const suoi=((q&&q.canDo)||[]).filter(function(c){return lavoro.indexOf(c)>=0;});
   return suoi.length?suoi:lavoro;
@@ -3989,9 +4032,13 @@ function apriPannelloCasella(){
         h+='<button type="button" class="altri" onclick="PAN_ALTRI=true;apriPannelloCasella();">Tutti gli altri turni &#9662;</button>';
       }
     }
-    const speciali=turniSceglibili(val).filter(s=>s.is_off||s.is_ferie||(s.code||'').toUpperCase()==='MALATTIA').map(s=>s.code);
+    const statiTurni=turniSceglibili(val).filter(isStato);
+    const speciali=statiTurni.map(s=>s.code);
     h+='<div class="sigle" style="margin-top:7px;">';
     speciali.forEach(c=>{h+='<button type="button" class="'+(c===val?'scelto':'')+'" style="'+shiftColorStyle(c)+'" onclick="scegliTurno(\''+c+'\')">'+c+'</button>';});
+    // Se in questo reparto la malattia non esiste ancora, la si crea da qui
+    if(!statiTurni.some(isAssenza))
+      h+='<button type="button" class="neutro" title="Non c\'&egrave; in legenda per '+repLabel()+': la creo io" onclick="creaMalattia()">+ Malattia</button>';
     h+='<button type="button" class="neutro" onclick="scegliTurno(\'\')">Svuota</button></div>';
     h+='<p class="hint">Invio conferma quello che hai scritto, Esc chiude. Trascina la sigla per spostarla, con Ctrl la copi.</p>';
   } else {
@@ -4022,6 +4069,24 @@ function apriPannelloCasella(){
     y=Math.max(window.scrollY+8,r.top+window.scrollY-alt-5);
   pan.style.left=Math.max(8,x)+'px';pan.style.top=y+'px';
   const inp=document.getElementById('pan-sigla');if(inp)inp.focus();
+}
+// Crea lo stato MALATTIA nella legenda di QUESTO reparto e lo mette
+// subito nella casella scelta. Senza orari: non conta ore, e per l'app
+// e' uno stato come OFF e FERIE.
+async function creaMalattia(){
+  if(!confirm('In legenda di '+repLabel()+' non c\'\u00e8 la malattia.\n\nLa creo adesso come stato (sigla MALATTIA, senza orari, non conta ore) e la metto in questa casella?'))return;
+  const s=SEL;
+  if(!G.shifts.some(x=>(x.code||'').toUpperCase()==='MALATTIA')){
+    G.shifts.push({code:'MALATTIA',s1:'',e1:'',s2:'',e2:'',pausa:'',is_off:false,is_ferie:false,
+      fasce:[],compatibleRoles:[],color:'#b91c1c',archiviato:false});
+    try{await dbSaveShifts();}catch(e){}
+    G.allShifts=G.allShifts.filter(x=>!(repOf(x)===REP&&(x.code||'').toUpperCase()==='MALATTIA'))
+      .concat([{code:'MALATTIA',s1:'',e1:'',s2:'',e2:'',pausa:'',is_off:false,is_ferie:false,
+        fasce:[],compatibleRoles:[],color:'#b91c1c',archiviato:false,reparto:REP}]);
+    renderLegSidebar();
+  }
+  SEL=s;
+  if(SEL)scegliTurno('MALATTIA');
 }
 function scegliTurno(code){
   if(!SEL)return;
@@ -4487,7 +4552,7 @@ function renderFabbisogno(){
   const wk=curWeek();
   const tit=document.getElementById('fab-page-title');
   if(tit)tit.innerHTML='Fabbisogno turni — '+repLabel()+(wk?' <span style="font-size:11px;font-weight:400;color:var(--text2);">settimana attiva: '+wk.name+'</span>':'');
-  const turni=turniSceglibili().filter(s=>!s.is_off&&!s.is_ferie&&s.code!=='MALATTIA');
+  const turni=turniSceglibili().filter(s=>!isStato(s));
   let html='';
   DAY_NAMES.forEach((nome,di)=>{
     const tipo=wk?(wk.day_config||[])[di]:'cena';
@@ -4663,7 +4728,7 @@ function rimuoviSlot(di,apertura,sid){
 function cambiaCodiceSlot(di,apertura,sid,idx){
   const f=getFabGiorno(di,apertura);
   const s=f.slots.find(x=>x.id===sid);if(!s)return;
-  const turni=turniSceglibili().filter(x=>!x.is_off&&!x.is_ferie&&x.code!=='MALATTIA').map(x=>x.code);
+  const turni=turniSceglibili().filter(x=>!isStato(x)).map(x=>x.code);
   const elenco=turni.map((t,i)=>`${i+1}. ${t}`).join('\n');
   const r=prompt('Sostituisci '+s.codes[idx]+' con quale turno?\n\n'+elenco+'\n\nNumero (o vuoto per togliere questa sigla dallo slot):');
   if(r===null)return;
@@ -4969,7 +5034,7 @@ const CARICO_NOV={"turni":[{"code":"B1","s1":"","e1":"","s2":"17:00","e2":"01:00
 function _riepilogoCarico(){
   const codiciNuovi=new Set(CARICO_NOV.turni.map(t=>t.code));
   const sala=G.allShifts.filter(x=>repOf(x)==='sala');
-  const speciali=s=>s.is_off||s.is_ferie||s.code==='MALATTIA';
+  const speciali=s=>isStato(s);
   const daArchiviare=sala.filter(x=>!speciali(x)&&!codiciNuovi.has(x.code));
   const sostituiti=sala.filter(x=>!speciali(x)&&codiciNuovi.has(x.code));
   const persone=Object.keys(CARICO_NOV.cando)
@@ -5005,8 +5070,8 @@ async function caricaLegendaNovembre(){
   const codiciNuovi=new Set(CARICO_NOV.turni.map(t=>t.code));
   const altri=G.allShifts.filter(x=>repOf(x)!=='sala');
   const sala=G.allShifts.filter(x=>repOf(x)==='sala');
-  const speciali=sala.filter(x=>x.is_off||x.is_ferie||x.code==='MALATTIA');
-  const vecchi=sala.filter(x=>!(x.is_off||x.is_ferie||x.code==='MALATTIA'));
+  const speciali=sala.filter(isStato);
+  const vecchi=sala.filter(x=>!isStato(x));
   const perCodice={};vecchi.forEach(x=>{perCodice[x.code]=x;});
   const nuovi=CARICO_NOV.turni.map((t,i)=>{
     const prec=perCodice[t.code];
@@ -5115,7 +5180,7 @@ function remShift(i){
 function addShift(){
   const newShift={code:'NEW',s1:'',e1:'',s2:'',e2:'',pausa:'',is_off:false,is_ferie:false,fasce:[],compatibleRoles:[]};
   // Insert alphabetically by code — find insertion point
-  const idx=G.shifts.findIndex(s=>!s.is_off&&!s.is_ferie&&s.code!=='MALATTIA'&&s.code>'NEW');
+  const idx=G.shifts.findIndex(s=>!isStato(s)&&s.code>'NEW');
   if(idx>=0)G.shifts.splice(idx,0,newShift);
   else G.shifts.push(newShift);
   renderLegenda();
@@ -7707,7 +7772,7 @@ function exportPDF(){
       const val=getShiftCode(wk,c.idx,p.id,c.servizio)||'';
       const u=val.toUpperCase();
       let cls='';
-      if(u==='OFF'||u==='FERIE'||u==='MALATTIA')cls='off';
+      if(u==='OFF'||u==='FERIE'||isStatoCode(val))cls='off';
       else if(u.startsWith('BR'))cls='br';else if(u[0]==='B')cls='b';else if(u[0]==='C')cls='c';else if(u[0]==='R')cls='r';else if(u[0]==='D')cls='d';else if(u[0]==='M')cls='m';else if(u[0]==='A')cls='a';else if(u[0]==='E')cls='e';
       html+='<td class="'+cls+'">'+val+'</td>';
     });
